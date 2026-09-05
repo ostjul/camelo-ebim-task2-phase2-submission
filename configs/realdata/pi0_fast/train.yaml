@@ -1,0 +1,57 @@
+# pi0-FAST on the real-robot Munich corpus. Opportunistic -- only if a GPU
+# slot is idle. This is the ladder's strongest NEGATIVE result: at a
+# matched budget on the sim corpus it FAILED the exact timing-probe
+# instrument checkpoint selection runs on (near 0.171 / far 0.000,
+# MISPLACED -- a chunk contains a close, but it lands outside the executed
+# window -- while ACT scored 0.958 on the identical instrument). Treat
+# this as a SCIENCE run (discrete-head control vs pi0.5 at matched
+# budget), not a rig candidate, while anything ranked above it is
+# untested (docs/realdata/08_MODEL_SELECTION_AND_RIG_SCHEDULE.md §0/§2.4).
+#
+# policy.path points at the LOCAL derived base, not the hub id directly --
+# `make stage RUNG=pi0fast` builds it: every file symlinked back into the
+# pristine HF cache except policy_preprocessor.json, rewritten to name
+# lerobot/fast-action-tokenizer (the tokenizer this transformers version
+# can actually load). Never override --policy.action_tokenizer_name here:
+# the trainer loads policy_preprocessor.json verbatim off --policy.path
+# and never rebuilds the pipeline from that config field, so it is a no-op.
+#
+# 27/15 fits under the fixed 32-wide linear projection (pads, does not
+# truncate). Steps CUT to 25,000 (from the sim corpus's 34,854-step
+# convention, 20h18m measured there) -- this corpus's 720p AV1 head frames
+# are plausibly slower per step and 34,854 risked crossing the 24h cliff.
+#
+# peft.target_modules is HAND-AUTHORED for pi0_fast, not copied from the
+# pi0.5 config: PI0FastPolicy has no gemma_expert / action_in_proj /
+# action_out_proj -- it is a single PaliGemma LM emitting actions as
+# decoded FAST tokens through its own LM head, and does not override
+# _get_default_peft_targets(), so omitting target_modules raises. Targets
+# every language-model layer's self-attn (q/k/v/o) and MLP (gate/up/down)
+# projections, matching configs/pi0fast_ft.yaml's already-audited regex.
+policy:
+  path: outputs/models/pi0fast-base-lerobot-tokenizer
+  device: cuda
+  push_to_hub: false
+  dtype: bfloat16
+  gradient_checkpointing: true
+  chunk_size: 50
+  n_action_steps: 50
+  scheduler_decay_steps: 25000
+rename_map:
+  observation.images.head: observation.images.base_0_rgb
+  observation.images.wrist_left: observation.images.left_wrist_0_rgb
+  observation.images.wrist_right: observation.images.right_wrist_0_rgb
+peft:
+  method_type: LORA
+  r: 32
+  lora_alpha: 64
+  target_modules: '(model\.paligemma_with_expert\.paligemma\.model\.language_model\.layers\.\d+\.self_attn\.(q|k|v|o)_proj|model\.paligemma_with_expert\.paligemma\.model\.language_model\.layers\.\d+\.mlp\.(gate|up|down)_proj)'
+tolerance_s: 1.01
+dataset:
+  video_backend: pyav
+  eval_split: 0.1
+eval_steps: 1000
+steps: 25000
+batch_size: 32
+save_freq: 2083
+num_workers: 8

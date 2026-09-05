@@ -1,0 +1,65 @@
+# Perception profile for the Munich rig head camera (ZED-M, 1280x720, HD720
+# single eye from zed_open_capture_ros). The station's own config says the
+# "rect" topic is UNRECTIFIED; there is no camera_info on the rig.
+#
+# camera: pinhole + OpenCV radial distortion. SELF-CALIBRATED 2026-09-05 from
+# the straightness of the workbench's own edges on seven real head frames
+# (outputs/rig/t5): k1 = -0.19 straightens the near edge from 25 px of bow to
+# < 1 px RMS. f is the ZED-M's nominal 90 deg HFOV (640 px at 1280 wide) — line
+# straightness cannot determine f, so replace fx/fy/cx/cy with the factory
+# calibration (or a checkerboard) before trusting metric distances.
+# undistort_scale shrinks the output focal length so the periphery stays in
+# frame: at 1.0 the near table corners at the parked pose land outside the
+# image and are dropped as border vertices; at 0.85 they sit ~60 px inside.
+camera:
+  fx: 640.0
+  fy: 640.0
+  cx: 640.0
+  cy: 360.0
+  dist: [-0.19, 0.0, 0.0, 0.0]
+  undistort_scale: 0.85
+# surface_v_abs: the tabletop is a white laminate (V 181-198) in front of
+# white partitions (V 92-133) over a dark cabinet (V 20-44). The sim's
+# floor-relative threshold (floor + 45) admits the partitions and fuses them
+# with the table. An absolute threshold separates them with zero wall
+# leakage on all seven frames; 165 (not the 145 that first isolated the
+# table) keeps the robot's own shell — nearly as bright — out of the near
+# edge, so the hull's near corners are table corners, not crop vertices.
+surface_v_abs: 165
+# ignore_regions: [x0, y0, x1, y1] in the UNDISTORTED, scaled frame. The
+# base's white shell shows at both lower corners and bridges into the
+# tabletop blob at every threshold that keeps the tabletop whole; zeroing
+# these strips gave 5-6 tabletop corners on all seven frames (2026-09-05),
+# far-right within ~10 px across frames. Known gap: the far-left corner on
+# the live captures sits in a shadow and lands 40-80 px off — re-tune with
+# captures at the approach start poses if that corner is ever needed.
+ignore_regions:
+  - [0, 400, 40, 720]
+  - [1240, 400, 1280, 720]
+
+# ---------------------------------------------------------------------------
+# Real-base drive (used with --world real --approach perception).
+# Everything below the `rig:` block that is `null` must be measured at the
+# rig by the operator (tape measure + ros2 CLI; procedure and frame
+# convention in the submission README §8). The team had no rig access after
+# this profile was written, so none of it has been measured and the
+# approach has never driven this base; the controller refuses to construct
+# while goal_xy_yaw is null.
+# ---------------------------------------------------------------------------
+rig:
+  base_only: true          # navigate -> done; no spine hold, no arm stages
+  continuous_twist: true   # TwistStamped on the wire, no pedal quantizer
+  max_linear_mps: 0.1      # swerve clamp (contracts.REAL_BASE_*)
+  max_angular_radps: 0.1
+  kp_linear: 1.0           # saturates beyond 0.1 m error, tapers below
+  kp_yaw: 1.5
+  goal_xy_m: 0.03          # arrival tolerance; the overlay/pad-centroid gate
+  goal_yaw_rad: 0.035      # verifies the final pose afterwards
+  settle_s: 1.0
+walls: none                # no wall map on the rig (sim: task2 cubicle)
+spine_m: 0.434             # corpus spine setpoint (R-69); read live (scripts/read_spine.py)
+# World frame = table frame: origin at the table centre, x along the long
+# side (the pad row), +y towards the robot's parked side, yaw 0.
+table: null                # MEASURE: {origin_xy: [0.0, 0.0], size_xy: [L, W], height_m: H, yaw: 0.0}
+goal_xy_yaw: null          # MEASURE: parked T6 base_link pose [x, y, yaw]; facing the table from +y: yaw -1.5708
+start_xy_yaw: null         # optional default seed; --approach-start-xy-yaw overrides

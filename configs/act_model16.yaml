@@ -1,0 +1,21 @@
+# W4/B1 matched-data ACT control: same policy/hparams as configs/act.yaml,
+# trained on ext_fixpos200_model16_v1 (16-dim model proprio) instead of the
+# 37-dim ext_fixpos200_train_v1 recorded state, so W4's discrete-head arms
+# and this continuous-head arm see identical data. 2026-08-28.
+#
+# Dataset is NOT named here (same convention as act.yaml and
+# pi05_ft_lora_v2_untrimmed.yaml): pass DATA=outputs/datasets/ext_fixpos200_model16_v1,
+# camelo.train.train injects dataset.repo_id/dataset.root from --data. ACT
+# has no --policy.path base, so check_state_width is a no-op and the model
+# infers its input/output feature widths from the dataset — no [16] vs [37]
+# guard to satisfy. temporal_ensemble_coeff is deliberately unset: ensembling
+# for this arm is applied at eval time via a separate adapter flag, not here.
+policy:
+  type: act
+  chunk_size: 32
+  n_action_steps: 16
+  device: cuda
+steps: 100000
+batch_size: 8
+save_freq: 10000
+num_workers: 8

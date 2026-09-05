@@ -1,0 +1,90 @@
+# MolmoAct2 on the real-robot Munich corpus, 4xH100 DDP. Parallel wave:
+# staged + smoked (via a 2-GPU rehearsal, see ../molmoact2_ddp2_rehearsal/)
+# in Phase A, then queued for the 4-GPU run early so its volatile queue
+# wait overlaps other work (docs/realdata/08_MODEL_SELECTION_AND_RIG_SCHEDULE.md
+# §0/"the four live findings" #3). Best PRETRAINING match on paper
+# (yam_dual_molmoact2: bimanual, absolute joint pose, 3 cameras, >720h)
+# but the worst integration profile: 43.6 GB unstaged (allenai/MolmoAct2
+# ~21.8 GB + a transitive allenai/MolmoAct2-DROID pull at load time), the
+# cluster's first-ever multi-GPU job, and a live upstream gripper-polarity
+# question (no flip for v1).
+#
+# checkpoint_path, NEVER --policy.path -- this is a raw HF model repo, not
+# a lerobot checkpoint (same shape as GR00T's base_model_path trap).
+#
+# Global batch is FIXED at 32 (AI2's own "Common Practices" guidance for
+# <200-demo real-world datasets). lerobot 0.6.1 has zero gradient
+# accumulation, so global batch = batch_size(per-process) x num_processes
+# exactly: batch_size=8 here x 4 GPUs (../launch.sh) = 32.
+#
+# image_keys is set EXPLICITLY -- this also disables allow_image_key_fallback,
+# so a missing camera raises instead of silently filling. The rename to
+# franka_robot_right_gripper_open_fraction on state dim 14 (done by the
+# corpus builder) is load-bearing: MolmoAct2 finds gripper dims by the
+# substring "gripper" in the feature NAME, not by position, and passes
+# them through UNNORMALIZED -- without the rename the state knuckle would
+# be quantile-normalized while the action gripper is not.
+#
+# setup_type/control_mode: ASSUMPTION, not sourced from any doc -- these
+# are free-text fields that silently render as "The setup is ." if left
+# at the "" default. The strings below are this task's best-effort guess
+# matching our platform and the D10 absolute-action decision; verify
+# nothing better is documented before trusting them (see README).
+#
+# scheduler_decay_steps=25000 MUST be set explicitly -- the 0.6.1 class
+# default is 100,000 and would park the LR high for the whole run. The
+# LoRA adapter's own LR is hard-coded to 5e-5 internally and is NOT read
+# from optimizer_lr (which still governs the fully-trainable action expert).
+#
+# max_eval_samples=512 is LOAD-BEARING (added 2026-08-31, M-2). With the
+# 0.6.1 default of 0 the held-out pass is NOT subsetted: lerobot_train.py
+# :515 only builds the Subset when max_eval_samples > 0, so eval_steps
+# iterates the WHOLE 10,522-frame eval split, 25 times over this run.
+# Measured on one H100 at batch 8: 512 samples = 236 s; the uncapped
+# 10,522 extrapolates to ~21 min/eval on one GPU, i.e. ~5 min/eval
+# sharded over 4 ranks, ~2.2 h of the 20 h request spent on eval alone.
+# 512 caps it at ~15 s/eval. Caveat: the subset is the FIRST 512 frames
+# of the eval split per task, not a random sample -- fine for a
+# comparable loss curve, not a held-out metric to quote.
+# This is the same knob whose absence made the 2-GPU rehearsal (3983334)
+# look like a throughput failure; see 13_LAUNCH_LOG.md "M-2 update".
+policy:
+  type: molmoact2
+  checkpoint_path: allenai/MolmoAct2
+  device: cuda
+  push_to_hub: false
+  chunk_size: 20
+  n_action_steps: 20
+  image_keys:
+    - observation.images.head
+    - observation.images.wrist_left
+    - observation.images.wrist_right
+  setup_type: "bimanual franka robotic arms"
+  control_mode: "absolute joint pose"
+  enable_lora_vlm: true
+  enable_lora_action_expert: false
+  gradient_checkpointing: true
+  model_dtype: bfloat16
+  scheduler_decay_steps: 25000
+tolerance_s: 1.01
+dataset:
+  video_backend: pyav
+  eval_split: 0.1
+eval_steps: 1000
+max_eval_samples: 512
+log_freq: 100
+steps: 25000
+batch_size: 8
+# save_freq: 6250, NOT the ladder's steps/12 (2083). Disk, not convention
+# (launch agent, 2026-08-31, after the M-2 update). A MolmoAct2 checkpoint
+# measures **14 GB** (job 3986257's 000300), so steps/12 would write
+# 12 x 14 = 168 GB for this run alone. `checkquota` at 14:24 reports the
+# shared /scratch/gpfs/FHEIDE fileset at 39.3 TiB of 40 TiB -- ~717 GB free
+# for every FHEIDE user, and the already-running GR00T (24 GB x 12) and
+# VLA-JEPA (17 GB x 12) rungs have ~350 GB of that spoken for. 6250 gives
+# four checkpoints (6250/12500/18750/25000) for 56 GB. Selection is the M1
+# gripper-close verdict on the final checkpoint, not a loss ladder over
+# twelve of them (repo MEMORY: "share folders get the final checkpoint plus
+# small supporting files, not a ladder; disk is shared").
+save_freq: 6250
+num_workers: 8

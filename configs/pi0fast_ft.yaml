@@ -1,0 +1,78 @@
+# pi0_fast LoRA fine-tune on the untrimmed corpus — W4 / protocol B1
+# (docs/research/GRASP_EXPERIMENT_PLAN.md §4 W4): does pi0_fast's discrete
+# FAST-token gripper head do better than pi0.5's flow-matching head on the
+# SAME data pi0.5 was fine-tuned on? Everything trainable here mirrors
+# `configs/pi05_ft_lora_v2_untrimmed.yaml` — same dataset, same LoRA
+# rank/alpha, same optimizer/scheduler/batch/step budget — so the pair is a
+# one-variable test of action-head architecture. Written 2026-08-28.
+#
+# ## pi0_fast has no gemma_expert or action_in_proj/action_out_proj
+#
+# pi0.5/pi0 run a SEPARATE small "gemma_expert" transformer for the flow
+# head, with its own linear action-in/out/time projections outside the
+# language model — that's what the pi05 config's target_modules regex
+# names. pi0_fast has neither: `PI0FastPolicy` (lerobot/policies/pi0_fast/
+# modeling_pi0_fast.py) is a SINGLE PaliGemma language model
+# (`self.model.paligemma_with_expert.paligemma.model.language_model`,
+# gemma_2b variant) that emits actions as decoded FAST tokens through its
+# own LM head — AdaRMS conditioning (`use_adarms=[False, True]`)
+# distinguishes prefix (vision+text) from suffix (action-token) processing
+# inside the SAME stack rather than a second network. So there is nothing
+# for pi0.5's regex to match, and the fine-tune would silently degrade to
+# 0 trainable parameters if reused as-is.
+#
+# `peft.target_modules` below is therefore NEWLY AUTHORED for this file
+# (not copied from any existing lerobot default — pi0_fast's PI0FastPolicy
+# does not override `_get_default_peft_targets()`, unlike pi0/pi05/smolvla,
+# so there is no built-in default to diverge from). It targets every
+# language-model layer's self-attention (q/k/v/o) and MLP (gate/up/down)
+# projections — confirmed by name via
+# `.venv/lib/python3.12/site-packages/lerobot/policies/pi0_fast/modeling_pi0_fast.py`
+# (debug dtype lookups at lines 443/536/645 walk exactly this path) and by
+# `pi_gemma.py`'s `PiGemmaModel`/`GemmaAttention`/`GemmaMLP` layer classes.
+# PEFT wraps the WHOLE POLICY, not just the inner model (`pretrained.py:
+# wrap_with_peft` calls `get_peft_model(self, ...)` where `self` is the
+# `PI0FastPolicy` instance), so every module path carries the leading
+# `model.` prefix — same convention the pi05 config's own regex uses for
+# `model.(action_in_proj|...)`.
+policy:
+  # A LOCAL derived checkpoint, not the hub id `lerobot/pi0fast-base`
+  # directly. lerobot's trainer loads `policy_preprocessor.json` verbatim
+  # off whatever `--policy.path` points at whenever it's set — it never
+  # rebuilds the pipeline from `PI0FastConfig.action_tokenizer_name`, so a
+  # `--policy.action_tokenizer_name=...` config override is a no-op here.
+  # The upstream export's saved pipeline pins `action_tokenizer_name:
+  # physical-intelligence/fast`, a repo whose tokenizer layout this
+  # transformers version cannot load even online. `scripts/stage_assets.py:
+  # derive_pi0fast_base` (run via `make stage RUNG=pi0fast`) builds this
+  # directory: every file symlinked back into the pristine HF cache except
+  # policy_preprocessor.json, which is rewritten to name
+  # `lerobot/fast-action-tokenizer` (byte-identical tokenizer content, the
+  # subfolder layout this loader expects, and already what the checkpoint's
+  # own config.json names as the default anyway). The HF cache itself is
+  # never mutated.
+  path: outputs/models/pi0fast-base-lerobot-tokenizer
+  device: cuda
+  dtype: bfloat16
+  gradient_checkpointing: true
+  # Keep equal to `steps`, same convention as the pi0.5 LoRA config —
+  # park the LR at its floor for the tail of the run rather than decaying
+  # past the end.
+  scheduler_decay_steps: 34854
+# Camera parity with eval, POSITIONAL — see docs/runbooks/TRAINING.md. Same
+# keys/values as the pi0.5 configs.
+rename_map:
+  observation.images.head: observation.images.base_0_rgb
+  observation.images.wrist_left: observation.images.left_wrist_0_rgb
+  observation.images.wrist_right: observation.images.right_wrist_0_rgb
+peft:
+  method_type: LORA
+  r: 32
+  lora_alpha: 64  # 2r — never leave this None
+  target_modules: '(model\.paligemma_with_expert\.paligemma\.model\.language_model\.layers\.\d+\.self_attn\.(q|k|v|o)_proj|model\.paligemma_with_expert\.paligemma\.model\.language_model\.layers\.\d+\.mlp\.(gate|up|down)_proj)'
+# Same corpus, same sample budget as pi05_ft_lora_v2_untrimmed.yaml — pass
+# the dataset root with DATA=, it is not named here.
+steps: 34854
+batch_size: 32
+save_freq: 4000
+num_workers: 8

@@ -1,0 +1,59 @@
+# TMR-specific Robotiq 2F-85 gripper config.
+#
+#   FTDI DABD0VBN -> namespace left/gripper   (gripper bolted to the left_fr3v2 arm)
+#   FTDI DABD11QT -> namespace right/gripper  (gripper bolted to the right_fr3v2 arm)
+#
+# UPDATED 2026-08-29: both FTDI adapters were physically swapped for new units at some
+# point after the 2026-08-16 verification below - the old serials (DAAQM4W3/DAAQM5UJ) no
+# longer exist on the robot (`ls /dev/serial/by-id/`), and the two adapters now present
+# (DABD0VBN, DABD11QT) carry no left/right record anywhere. Re-identified by moving the
+# DABD0VBN gripper in isolation (namespace test_gripper, see HOW TO VERIFY below) and
+# having the operator confirm by eye which arm it was bolted to: left.
+#
+# Verified end to end on hardware 2026-08-16, with both arms live and both grippers driven
+# from the GELLO triggers. (That session used the old adapters, now replaced - see above.)
+#
+# THE RULE: bind each gripper to the arm it is BOLTED TO
+# ------------------------------------------------------
+# A gripper's namespace must match the namespace of the arm it is physically mounted on -
+# NOT whichever hand it feels correct under. The GELLO in the operator's RIGHT hand drives
+# the `left` namespace on this robot (see README: the operator's hands are crossed with
+# respect to the namespaces, and that is intended), so "the trigger in my right hand closes
+# the gripper on my right" can be TRUE while that gripper sits on the wrong arm.
+#
+# That is not hypothetical. On 2026-08-16 this file was flipped to satisfy the operator's
+# hand. It looked correct with the arms switched off, and the error only surfaced once the
+# arms were activated and each trigger was found to be closing the gripper on the far arm.
+#
+# HOW TO VERIFY - no left/right words needed
+# ------------------------------------------
+# Move one GELLO and squeeze its trigger. The arm it moves and the gripper it closes must be
+# the SAME physical arm. That question cannot be answered wrongly from the operator's frame,
+# unlike "which side did that happen on?", which is self-consistent under either reading and
+# will simply confirm whatever you already believed.
+#
+# To check a gripper on its own, stop the GELLO publisher first (it commands at 30 Hz and
+# overrides manual goals), then drive the two to visibly opposite states:
+#   ros2 action send_goal /left/gripper/robotiq_gripper_controller/gripper_cmd \
+#     control_msgs/action/GripperCommand "{command: {position: 0.78, max_effort: 1.0}}"
+#   ros2 action send_goal /right/gripper/robotiq_gripper_controller/gripper_cmd \
+#     control_msgs/action/GripperCommand "{command: {position: 0.0,  max_effort: 1.0}}"
+#
+# The by-id paths are used rather than raw /dev/ttyUSBn - that numbering is not stable
+# across reboots. A udev rule used to set MODE:="0666" for the old adapters
+# (/etc/udev/rules.d/92-robotiq-tmr3.rules), but it named them by their old serials and
+# is gone from this robot along with those adapters (see UPDATED 2026-08-29 above). Until
+# a replacement rule exists for DABD0VBN/DABD11QT, tmr-user needs dialout membership or
+# the ports need `sudo chmod 666` after every reboot/replug.
+#
+# `namespace` must match the GELLO side namespace: gello_publisher publishes
+# <ns>/gripper/gripper_client/target_gripper_width_percent, and robotiq_gripper_client
+# subscribes to the relative topic gripper_client/target_gripper_width_percent.
+
+LEFT:
+  com_port: "/dev/serial/by-id/usb-FTDI_USB_TO_RS-485_DABD0VBN-if00-port0"
+  namespace: "left/gripper"
+
+RIGHT:
+  com_port: "/dev/serial/by-id/usb-FTDI_USB_TO_RS-485_DABD11QT-if00-port0"
+  namespace: "right/gripper"

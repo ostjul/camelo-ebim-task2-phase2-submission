@@ -1,0 +1,99 @@
+# Diffusion Policy on the real-robot Munich corpus. First wave -- from
+# scratch, so no OOD-embodiment question at all; the one architecture that
+# can represent the corpus's 3-slot / re-grasp multimodality
+# (docs/realdata/08_MODEL_SELECTION_AND_RIG_SCHEDULE.md §2.4).
+#
+# 27/15 state/action, unmodified (DiffusionConfig has no dim cap).
+#
+# `--policy.horizon`, NOT `--policy.chunk_size` -- DiffusionConfig has no
+# chunk_size field at all. horizon must be a multiple of the U-Net
+# downsampling factor 2**len(down_dims) = 2**3 = 8: 24 (1.2 s at 20 Hz) is
+# the nearest valid value to the time-matched ~21. n_action_steps=12.
+#
+# normalization_mapping is MIN_MAX for STATE+ACTION (DiffusionConfig's own
+# default) -- uniquely exposed to the corpus's 4.98% all-zero right-wrench
+# dropout (ep 15 is 81.8% zeros): a single outlier frame sets the range.
+# Sanity-check the recomputed q01/q99 stats before trusting this rung.
+#
+# use_separate_rgb_encoder_per_camera is the class default (true): three
+# independent ResNet18s, one per camera.
+#
+# IMAGE HANDLING -- CHANGED 2026-08-31 after smoke job 3983178 FAILED at
+# policy-construction time (before step 0):
+#   ValueError: `observation.images.wrist_left` does not match
+#   `observation.images.head`, but we expect all image shapes to match.
+# `DiffusionConfig.validate_features()`
+# (policies/diffusion/configuration_diffusion.py:241-248) requires ALL image
+# features to have identical shape. Our corpus does not: head is (3,720,1280),
+# both wrists are (3,480,640) (00_PROTOCOL.md D4). ACT has no such check,
+# which is why act/train.yaml needs nothing here. Two facts decide the fix:
+#
+# TWO checks have to be satisfied, and they need different mechanisms. The
+# first fix attempt (job 3983235) fixed only the config check and then died
+# at step 0 with
+#   RuntimeError: stack expects each tensor to be equal size, but got
+#   [8, 2, 3, 720, 1280] at entry 0 and [8, 2, 3, 480, 640] at entry 1
+# from modeling_diffusion.py:170 -- so both are needed:
+#
+#  (a) CONFIG check, on the DECLARED info.json shapes. Only an explicit
+#      `input_features` silences it: `make_policy` auto-derives features
+#      solely when the field is empty (policies/factory.py:305-306). Which is
+#      also why `observation.state` (27) is listed here by hand -- declaring
+#      input_features suppresses auto-derivation for EVERY input, not just
+#      images. (`policy.resize_shape` does NOT satisfy this check: it never
+#      touches the declared shapes.)
+#
+#  (b) RUNTIME check, on the real tensors. `DiffusionPolicy.forward` does
+#      `torch.stack([batch[key] for key in self.config.image_features], dim=-4)`
+#      at modeling_diffusion.py:170 -- BEFORE the encoder runs, so
+#      `resize_shape` (applied inside `DiffusionRgbEncoder`,
+#      modeling_diffusion.py:483-484) is downstream of the failure and cannot
+#      fix it. The frames must already be the same size when they arrive.
+#      Only `dataset.image_transforms` can do that.
+#
+# `resize_shape` is kept anyway: it is where the encoder's feature-map dry run
+# reads H,W from (modeling_diffusion.py:521-529), so config and data agree by
+# construction instead of by coincidence. With the dataset transform in front
+# of it the resize is a no-op on already-240x320 tensors.
+#
+# eval_steps: 0 -- the price of (b), and the same deviation groot_n17 makes
+# for the same underlying reason. `datasets/factory.py:188-209` builds the
+# TRAIN dataset with `image_transforms` and the EVAL dataset with
+# `image_transforms=None`. So an eval pass would feed raw 720p/480p frames
+# into that same torch.stack and raise -- at step 1000, ~15 minutes into a
+# multi-hour job, long after a 300-step smoke had gone green.
+# `dataset.eval_split: 0.0` would also silence it and is the WRONG fix: it
+# would give this rung 195 training episodes where every other rung gets 175.
+# eval_split stays 0.1, the split stays identical, only the eval PASS is
+# skipped. Selection is the M1 gripper-close timing verdict on held-out
+# episodes, never eval loss (00_PROTOCOL.md §5.2).
+#
+# 240x320 is 4:3: the wrists are an exact 2x downsample, the 16:9 head is
+# squashed horizontally. That asymmetry is the U11/D4 "a global Resize fixes
+# it but squashes the wrists too" trade made in the other direction --
+# preferred here because this rung trains from scratch, so there is no
+# pretrained aspect ratio to stay in distribution with, and consistency
+# across all 40,000 steps is what matters. Alternative if ever revisited:
+# [180, 320] (16:9, head exact, wrists squashed).
+policy:
+  type: diffusion
+  horizon: 24
+  n_action_steps: 12
+  n_obs_steps: 2
+  resize_shape: '[240, 320]'
+  input_features: '{"observation.images.head": {"type": "VISUAL", "shape": [3, 240, 320]}, "observation.images.wrist_left": {"type": "VISUAL", "shape": [3, 240, 320]}, "observation.images.wrist_right": {"type": "VISUAL", "shape": [3, 240, 320]}, "observation.state": {"type": "STATE", "shape": [27]}}'
+  device: cuda
+  push_to_hub: false
+tolerance_s: 1.01
+dataset:
+  image_transforms:
+    enable: true
+    max_num_transforms: 1
+    tfs: '{"resize": {"weight": 1.0, "type": "Resize", "kwargs": {"size": [240, 320]}}}'
+  video_backend: pyav
+  eval_split: 0.1
+eval_steps: 0
+steps: 40000
+batch_size: 8
+save_freq: 3333
+num_workers: 8

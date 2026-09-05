@@ -1,0 +1,22 @@
+9b335fc Add recover_gello.py: PTP the arm to GELLO before reactivating
+693e9dc Decouple keyboard mode-toggle from the pedal launch; switch to evdev
+89504d0 Sync start_camera_viewer.bash from the live station
+---
+ M station/camera_viewer.py
+ M station/pixi.lock
+ M station/pixi.toml
+ M station/src/franka_fr3_arm_controllers/config/controllers.yaml
+ M station/src/franka_fr3_arm_controllers/include/franka_fr3_arm_controllers/joint_impedance_controller.hpp
+ M station/src/franka_fr3_arm_controllers/src/joint_impedance_controller.cpp
+ M station/start_cameras.bash
+?? station/configs/d405_color_640x480.yml
+?? station/robot/start_robot_with_cameras.bash
+---
+ station/camera_viewer.py                           |  2 +-
+ station/pixi.lock                                  | 36 ++++++++++++++++++++++
+ station/pixi.toml                                  |  2 ++
+ .../config/controllers.yaml                        | 21 ++++++++++++-
+ .../joint_impedance_controller.hpp                 | 14 ++++++++-
+ .../src/joint_impedance_controller.cpp             | 35 ++++++++++++++++++---
+ station/start_cameras.bash                         |  6 ++--
+ 7 files changed, 106 insertions(+), 10 deletions(-)

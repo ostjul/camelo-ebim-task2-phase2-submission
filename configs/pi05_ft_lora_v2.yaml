@@ -1,0 +1,60 @@
+# pi0.5 fine-tune, experiment 1: adapt HARDER, still with LoRA.
+#
+# `configs/pi05_ft.yaml` (the recorded baseline, run pi05_ft_20260811_100730)
+# reaches the pad but hovers and collides instead of aligning. Three
+# measured reasons, all in the adapter rather than the data:
+#
+# 1. `peft.lora_alpha` was never set. lerobot drops None-valued PEFT
+#    overrides (`pretrained.py:507`), so PEFT's own default alpha=8
+#    applied: scaling = alpha/r = 8/16 = **0.5**. Every adapter update
+#    reached the frozen weights halved. lerobot's own config comment
+#    prescribes r or 2r; this file uses 2r.
+# 2. pi0.5's default target regex (`modeling_pi05.py:1098`) hits
+#    **38 modules / 1.3 M trainable params** — the expert's q,v
+#    projections plus action_in_proj and action_out_proj. Its other three
+#    targets are pi0 names that match NOTHING in pi0.5: there is no
+#    `state_proj` (pi0.5 discretizes state into the prompt instead), and
+#    the time MLP is `time_mlp_in/out`, not `action_time_mlp_in/out`.
+#    Measured against the checkpoint's own module names, not read off the
+#    source. The regex below adds k,o, the expert MLP, and the two time
+#    MLP layers under their real names: **130 modules / 14.1 M params**.
+# 3. float32 + no gradient checkpointing capped the baseline at batch 8,
+#    i.e. ~2 epochs over the 139 416-frame corpus where the upstream
+#    recipe trains on ~1.9 M samples. bfloat16 + checkpointing buys
+#    batch 32, so the same step count is 8 epochs.
+#
+# PaliGemma stays frozen — under PEFT everything outside `target_modules`
+# is requires_grad=False anyway, which is why `train_expert_only` and
+# `freeze_vision_encoder` are absent here: they would be inert.
+#
+# Paired with configs/pi05_ft_expert.yaml, which spends the same sample
+# budget on full-rank training of the whole action expert. Same corpus,
+# same caption, same lr: the two differ only in what is trainable.
+policy:
+  path: lerobot/pi05_base
+  device: cuda
+  # Casts the weights AND drives Accelerate's mixed_precision
+  # (lerobot_train.py:246-259) — one flag, both halves.
+  dtype: bfloat16
+  gradient_checkpointing: true
+  # `use_policy_training_preset` is on, so the schedule comes from these
+  # policy fields. The baseline left decay at 30000 against 34854 steps
+  # and parked the LR at its 2.5e-6 floor for the last 5k.
+  scheduler_decay_steps: 34854
+# Camera parity with eval, POSITIONAL — see docs/runbooks/TRAINING.md.
+rename_map:
+  observation.images.head: observation.images.base_0_rgb
+  observation.images.wrist_left: observation.images.left_wrist_0_rgb
+  observation.images.wrist_right: observation.images.right_wrist_0_rgb
+peft:
+  method_type: LORA
+  r: 32
+  lora_alpha: 64  # 2r — never leave this None (see 1. above)
+  # PEFT re.fullmatch's this against every module path (tuners_utils.py:1927).
+  target_modules: '(.*\.gemma_expert\..*\.self_attn\.(q|k|v|o)_proj|.*\.gemma_expert\..*\.mlp\.(gate|up|down)_proj|model\.(action_in_proj|action_out_proj|time_mlp_in|time_mlp_out))'
+# 8 epochs over 139 416 frames at batch 32 (the baseline's step count, 4x
+# its samples). Keep steps and scheduler_decay_steps equal.
+steps: 34854
+batch_size: 32
+save_freq: 4000
+num_workers: 8

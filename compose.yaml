@@ -1,0 +1,31 @@
+# Camelo — EBiM Task 2 real-robot submission, release v0.1.0 (2026-09-05).
+# One service: the ACT policy server on the GPU box. The executor on the
+# rig is NOT a container (station rule C-3: no container participants on
+# the robot's DDS graph while its nodes run) — run it natively, README §7.
+#
+#   docker compose up policy-server
+#   # then on the rig: python -u scripts/run_policy.py --world real --backend remote \
+#   #   --server ws://<gpu-box>:8767 ...          (README §7 for the full line)
+services:
+  policy-server:
+    image: ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0
+    network_mode: host            # ws://0.0.0.0:8767, reachable from the rig
+    environment:
+      CAMELO_MODE: serve
+      CAMELO_POLICY: lerobot
+      # The checkpoint is fetched from the Hub on first start into the
+      # mounted cache; bake it instead with the README's offline recipe.
+      CAMELO_CHECKPOINT: ostjul/camelo-ebim-task2-act-s27a15
+      CAMELO_EXTRA_ARGS: >-
+        --action-layout s27a15 --state-layout s27a15
+        --host 0.0.0.0 --port 8767 --seed 0
+      HF_HOME: /hf
+    volumes:
+      - ${HF_HOME:-~/.cache/huggingface}:/hf
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

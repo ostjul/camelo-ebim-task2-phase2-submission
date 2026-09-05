@@ -1,0 +1,86 @@
+/**:
+  controller_manager:
+    ros__parameters:
+      update_rate: 1000  # Hz
+
+      joint_impedance_controller:
+        type: franka_fr3_arm_controllers/JointImpedanceController
+
+      joint_state_broadcaster:
+        type: joint_state_broadcaster/JointStateBroadcaster
+
+      franka_robot_state_broadcaster:
+        type: franka_robot_state_broadcaster/FrankaRobotStateBroadcaster
+
+/**:
+  joint_impedance_controller:
+    ros__parameters:
+      # Speed of the one-off approach from the arm's current pose to the GELLO's pose
+      # when teleoperation starts. Range (0,1]; small is slow. Keep this low - the
+      # approach happens without the operator's hand on the leader arm.
+      motion_generator_speed_factor: 0.05
+      # Cap on how fast the commanded goal tracks the GELLO during teleoperation.
+      # The leader can be moved much faster than the follower may safely go; without
+      # this a quick hand movement demands a large jump and trips a velocity reflex.
+      # Set <= 0 to disable.
+      max_goal_velocity: 0.5   # rad/s
+      # Allow cross-machine clock offsets while still rejecting implausibly future-dated
+      # GELLO samples. This is ONLY a sanity check on the message stamp - the real
+      # staleness protection (hasFreshGelloState_) uses the local receive time and is
+      # immune to clock skew, so a generous value here costs little.
+      #
+      # 10 s rather than 0.05 s because the TMR's companion has no working NTP: its
+      # chronyd has no reachable source (no outbound internet), so the robot clock never
+      # converges and drifts freely against the laptop - observed 2.7-4 s out. The GELLO
+      # publisher runs on the laptop and stamps with the laptop clock, so that offset
+      # appears here as messages "from the future" and every sample is rejected, which
+      # presents as "Refusing activation: no valid GELLO joint state".
+      #
+      # This is deliberately generous, not a safety relaxation: real staleness is enforced
+      # by hasFreshGelloState_() against max_gello_liveness_gap (2.0 s, see below) using the
+      # LOCAL receive time, which no clock skew can affect. This parameter only sanity
+      # checks the message stamp.
+      #
+      # Tighten this to ~0.5 s once the clock is actually synced -
+      # configs/sync_robot_clock.sh does that in one command.
+      future_timestamp_tolerance: 10.0  # seconds
+      # Per-message acceptance gate for incoming GELLO samples (validateGelloJointState_).
+      # A message is rejected outright (gello_position_values_ NOT updated) if its own
+      # publisher-stamped header.stamp is older than this relative to local receive time.
+      # Kept tight so a burst of delayed/out-of-order samples after a network hiccup
+      # cannot feed a temporally incoherent target into the arm - widening this value
+      # trades tracking smoothness for shutdown-tolerance; use max_gello_liveness_gap
+      # below for that instead.
+      max_gello_message_age: 0.5   # seconds
+      # Liveness/staleness watchdog (hasFreshGelloState_): how long since the last
+      # ACCEPTED GELLO message, by local receive clock (immune to publisher clock skew),
+      # before the feed is considered dead. Gates on_activate() and
+      # initializeMotionGenerator_(), and triggers RCLCPP_FATAL + rclcpp::shutdown()
+      # (which tears down the whole ros2_control_node, cascading into the robot stack)
+      # in update(). Deliberately wider than max_gello_message_age so transient
+      # ~0.5-2 s DDS/network delivery gaps (observed intermittently on this link; root
+      # cause not fully pinned down) don't trip a fatal shutdown during normal use.
+      # If nuisance shutdowns return, widen THIS value, not max_gello_message_age -
+      # widening the latter reintroduces jittery tracking instead.
+      max_gello_liveness_gap: 2.0   # seconds
+      k_alpha: 0.99
+      k_gains:
+        - 240.0
+        - 240.0
+        - 240.0
+        - 240.0
+        - 100.0
+        - 60.0
+        - 20.0
+      d_gains:
+        - 20.0
+        - 20.0
+        - 20.0
+        - 10.0
+        - 10.0
+        - 10.0
+        - 5.0
+
+/left/joint_impedance_controller:
+  ros__parameters:
+    gello_joint_directions: [-1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0]

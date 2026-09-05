@@ -1,0 +1,36 @@
+# ACT on the real-robot Munich corpus (task2_munich_s27a15). First wave --
+# from scratch, no OOD-embodiment question, and this program's only
+# checkpoint family with a measured VISION-TIMED gripper close
+# (docs/realdata/08_MODEL_SELECTION_AND_RIG_SCHEDULE.md §0/§2.4; the 0.958
+# score and the vision-timing sweep are on two DIFFERENT checkpoints, per
+# 08's reviewer correction -- see README).
+#
+# 27/15 state/action (docs/realdata/00_PROTOCOL.md §0.2). ACTConfig has no
+# max_state_dim/max_action_dim, so both widths pass through unmodified.
+#
+# chunk_size=21/n_action_steps=10, NOT the sim corpus's chunk_size=32/
+# n_action_steps=16: those were tuned at 30 fps (1.067 s window); this
+# corpus is 20 Hz, and 21/10 is the time-matched translation, the same one
+# configs/act_model16_2hz.yaml already used [00 §2.6, 05 §3.2].
+#
+# Image handling: U11 decided NATIVE resolution, no forced crop/letterbox
+# -- ACT trains from scratch, so there is no pretraining aspect ratio to
+# be OOD against [09_IMAGE_ASPECT_HANDLING.md]. No rename_map: the
+# dataset's own camera keys (head/wrist_left/wrist_right) pass straight
+# through, and normalization_mapping stays ACTConfig's own default
+# (MEAN_STD for VISUAL/STATE/ACTION), which already matches D9.
+policy:
+  type: act
+  chunk_size: 21
+  n_action_steps: 10
+  device: cuda
+  push_to_hub: false
+tolerance_s: 1.01
+dataset:
+  video_backend: pyav
+  eval_split: 0.1
+eval_steps: 1000
+steps: 100000
+batch_size: 8
+save_freq: 8333
+num_workers: 8

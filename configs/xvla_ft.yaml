@@ -1,0 +1,39 @@
+# Fine-tune X-VLA on recorded task2 data. Rung 2: 0.9B soft-prompted
+# cross-embodiment model whose whole design point is adapting to a new
+# embodiment, so it should move first and cheapest of the VLA rungs.
+# The instruction string must match eval (camelo/cli.py DEFAULT_TASK).
+#
+# ⛔ DO NOT RUN AS-IS — mis-specified, and it does NOT fail loudly (F-67).
+# `action_mode` defaults to `ee6d`, whose 20 dims are
+# [xyz(3), rot6d(6), gripper(1)] x 2 arms with gripper_idx=(9,19) and BCE on
+# those channels. Against our canonical [base(3), L_arm(7), R_arm(7),
+# L_grip, R_grip, spine] that puts BCE on left-arm-joint-7 and the spine
+# (diverging, unbounded) and a x500 XYZ loss on base velocities — while the
+# position/rotation terms fall convincingly the whole time.
+# None of X-VLA's registered action spaces fits a dual-arm 7-DoF joint
+# contract (`joint` is 6-DoF; `franka_joint7` is single-arm), so this rung
+# needs either a new action space or the single-arm rung-5 framing first.
+#
+# steps/save_freq sized for the ~20k-frame external corpus (21 kept fixpos
+# episodes) the same way pi0_ft/smolvla_ft are: 20k steps @ batch 8 ~= 8
+# epochs of full fine-tuning — more memorizes ~20 demos. Select the
+# checkpoint by `make eval`, not train loss (docs/runbooks/TRAINING.md, config
+# sizing), and scale steps with the corpus once our own sessions land.
+policy:
+  path: lerobot/xvla-base
+  device: cuda
+# Camera parity with eval, and it is POSITIONAL — see the note in
+# docs/runbooks/TRAINING.md. `LeRobotAdapter._frame` feeds `obs.image_list()` (contract
+# order: head, wrist_left, wrist_right) into the checkpoint's image features
+# by INDEX, so this map must reproduce that same correspondence against
+# xvla-base's own feature order [image, image2, image3]. Getting it wrong is
+# silent: lerobot SKIPS its feature-consistency check whenever a rename_map
+# is supplied.
+rename_map:
+  observation.images.head: observation.images.image
+  observation.images.wrist_left: observation.images.image2
+  observation.images.wrist_right: observation.images.image3
+steps: 20000
+batch_size: 8
+save_freq: 2000
+num_workers: 8

@@ -1,0 +1,35 @@
+# Fine-tune smolVLA on recorded task2 data. Third rung: language-
+# conditioned, cheap enough to iterate; the instruction string must match
+# eval (camelo/cli.py DEFAULT_TASK). steps/save_freq sized for the
+# ~20k-frame external corpus (~16 epochs) — select by `make eval` and
+# scale steps with the corpus (docs/runbooks/TRAINING.md, config sizing).
+policy:
+  path: outputs/checkpoints/smolvla_base_state16
+  device: cuda
+# Camera parity with eval, POSITIONAL — see docs/runbooks/TRAINING.md. smolvla_base's
+# slots are generic (camera1..3), so ONLY the positional convention gives
+# them meaning; lerobot SKIPS its feature-consistency check whenever a
+# rename_map is supplied, so a wrong map fails silently.
+rename_map:
+  observation.images.head: observation.images.camera1
+  observation.images.wrist_left: observation.images.camera2
+  observation.images.wrist_right: observation.images.camera3
+steps: 20000
+batch_size: 16
+save_freq: 2000
+num_workers: 8
+
+# F-77 (was F-76 "BLOCKED"): smolvla_base declares a 6-dim
+# observation.state (SO-100) but its projection is 32-wide
+# (model.state_proj.weight [960, 32]) and prepare_state PADS to
+# max_state_dim rather than slicing — so training already consumed all 16
+# of our proprio dims. Measured: stock-base and relabelled-base runs are
+# BIT-IDENTICAL in loss and gradient norm. What the stale [6] broke was the
+# fine-tuned checkpoint, which inherited it, and eval then refused to load
+# it (pack_state, 6 < 16, F-45).
+# Fix is metadata-only — rebuild the relabelled base with:
+#   python scripts/make_state_relabelled_base.py lerobot/smolvla_base 16 \
+#       --output outputs/checkpoints/smolvla_base_state16
+# (weights symlinked, only config.json rewritten). Verified: the produced
+# checkpoint now declares state [16] / action [20].
+
