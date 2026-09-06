@@ -1,4 +1,4 @@
-# Camelo — EBiM Task 2 real-robot submission, release v0.1.0 (2026-09-05).
+# Camelo — EBiM Task 2 real-robot submission, release v0.1.0 (2026-09-06).
 # One service: the ACT policy server on the GPU box. The executor on the
 # rig is NOT a container (station rule C-3: no container participants on
 # the robot's DDS graph while its nodes run) — run it natively, README §7.

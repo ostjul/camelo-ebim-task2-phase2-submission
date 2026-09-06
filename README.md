@@ -195,7 +195,7 @@ python scripts/serve_policy.py --adapter lerobot \
 
 `--checkpoint` accepts a Hub repo id directly (lerobot's own `PreTrainedConfig.from_pretrained` resolves it) — no manual download step. Port 8767 is the ACT convention used throughout this repo's rig sessions.
 
-**What the image contains.** `ros:jazzy-ros-base` (Ubuntu 24.04, Python 3.12) with this repository installed editable, **torch 2.11.0+cu128 / torchvision 0.26.0+cu128** from the PyTorch `cu128` index, and **lerobot 0.6.1** (`pip install -e ".[policy]" lerobot==0.6.1`; the build's own import check prints the resolved versions). The checkpoint was trained with the same torch 2.11.0 and lerobot 0.6.1, so the served code path is the training one. The CUDA 12.8 wheels were chosen over PyPI's default CUDA 13 build deliberately: they run on any **R570-or-newer** NVIDIA driver (CUDA 13 wheels need R580+), which covers the current GCP Deep Learning VM images either way. The image is `linux/amd64` only and was cross-built under qemu on an aarch64 box; the team has no x86 GPU host, so the GPU path was not exercised on this exact image before release — the native serving line above is the fallback if the container fails to see the GPU (`nvidia-smi` inside `docker run --gpus all … nvidia-smi` is the first thing to check).
+**What the image contains.** `ros:jazzy-ros-base` (Ubuntu 24.04, Python 3.12) with this repository installed editable, **torch 2.11.0+cu128 / torchvision 0.26.0+cu128** from the PyTorch `cu128` index, and **lerobot 0.6.1** (`pip install -e ".[policy]" lerobot==0.6.1`; the build's own import check prints the resolved versions). The checkpoint was trained with the same torch 2.11.0 and lerobot 0.6.1, so the served code path is the training one. The CUDA 12.8 wheels were chosen over PyPI's default CUDA 13 build deliberately: they run on any **R570-or-newer** NVIDIA driver (CUDA 13 wheels need R580+), which covers the current GCP Deep Learning VM images either way. The image is `linux/amd64` only and was cross-built under qemu on an aarch64 box; the team has no x86 GPU host. Two things were therefore **not** exercised on this exact image before release: the GPU path, and the checkpoint load inside the container — under emulation the image's torch/torchvision run, but importing lerobot's policy module crashes qemu itself (§12). Run the §12 check on the GPU host before the first rollout; if the server fails to start, `nvidia-smi` inside `docker run --gpus all … nvidia-smi` is the first thing to check, and the native serving line above is the fallback.
 
 **On a cloud GPU VM** (the organisers' setup: an A100/H100 instance on Google Cloud). Any image with the NVIDIA container toolkit works (Deep Learning VM images have it); `docker compose` needs the toolkit for the GPU reservation in `compose.yaml`, or use the `docker run --gpus all` form above. Keep port 8767 closed to the internet: the executor speaks plain `ws://`, so reach the server through an SSH tunnel from the station (`ssh -L 8767:127.0.0.1:8767 <user>@<gpu-vm>`, §7) and leave the T6 command line at `--server ws://127.0.0.1:8767`. The rollout was developed against a round trip of roughly half a second; the asynchronous inference mode with the observation-time chunk base tolerates the extra hop, and `--max-image-age-s 0.5` remains the safety gate. Bandwidth: three cameras at 20 Hz, JPEG-encoded on the wire, is on the order of 5 MB/s upstream from the station — check it once with the dummy client (§7) before a scored run. Do **not** enable the wire resize/quality flags: ACT was trained at native resolution.
 
@@ -432,10 +432,19 @@ The first loads `configs/rig/perception_munich.yaml` and detects the tabletop in
 
 And the parity gate against a real checkpoint and dataset — the exact command is in §5.
 
+**The released image, without a GPU.** The same deterministic-load check the team runs on every checkpoint (`scripts/verify_checkpoint_load.py`: load twice, diff — real weights give max|diff| = 0, a silently random init does not) runs inside the released container on CPU:
+
+```bash
+docker run --rm -v ~/.cache/huggingface/hub/models--ostjul--camelo-ebim-task2-act-s27a15:/hub:ro \
+  ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0 python3 scripts/verify_checkpoint_load.py /hub/snapshots/5fd02f18707f685368b490a4a409936254c6814c --device cpu
+```
+
+(after one `hf download ostjul/camelo-ebim-task2-act-s27a15` to fill the cache; mount the whole model cache directory — the snapshot is symlinks into `blobs/`). On the team's aarch64 box this could only be attempted under qemu user-mode emulation (2026-09-06): the released image's torch 2.11.0+cu128 and torchvision run there (a matmul and a ResNet18 forward pass on CPU), but `import lerobot.policies.pretrained` — the first thing `verify_checkpoint_load.py` needs — crashes the emulator with a segmentation fault in a native extension, before any weight is read, regardless of `ATEN_CPU_CAPABILITY`, `OPENBLAS_CORETYPE` or thread-count pins. So this check, like the GPU path, remains to be run on the x86 host. The checkpoint itself passed the same check natively (aarch64, lerobot 0.6.2) before it was uploaded, and the Hub copy's weights hash matches the rig's.
+
 ## 13. Licence / contact
 
 Apache-2.0 (`LICENSE`). Team **Camelo** — point of contact on the submission issue.
 
 ---
 
-Release `v0.1.0` — 2026-09-05 (build `2e37879`).
+Release `v0.1.0` — 2026-09-06 (build `7551c09`).

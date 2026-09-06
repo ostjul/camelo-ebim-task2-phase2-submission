@@ -6,5 +6,5 @@
 #
 #   docker build -t camelo-task2-server .
 #
-# release v0.1.0 (2026-09-05)
+# release v0.1.0 (2026-09-06)
 FROM ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0
