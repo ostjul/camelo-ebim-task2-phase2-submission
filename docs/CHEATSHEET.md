@@ -2,7 +2,7 @@
 
 One block per step: **terminal → command → one sentence.** This is the
 terminal-by-terminal procedure behind the README's session flow, in the
-order a session runs it. Release `v0.1.0` (2026-09-09, build `40af6fa`), image
+order a session runs it. Release `v0.1.0` (2026-09-09, build `7fc268d`), image
 `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0`.
 
 ## Terminal legend
@@ -158,13 +158,44 @@ Every request must answer `chunk=(21, 15)` with no reconnects, else the tunnel o
 
 ## Rollout (P)
 
+Two ways to get the base in front of the table; pick one, then run its line.
+Video on, E-stop in hand, arms homed first ([Arms and scene](#arms-and-scene-apm)).
+
+**Option A — the perception approach drives the base (Max's perception-based
+navigation, `camelo/control/perception_based_navigation.md`).** Needs, once:
+`start_base.bash` running on the companion next to `start_upper.bash` (copy
+[`site/companion/start_base.bash`](../site/companion/start_base.bash) if it is
+missing), the two measurements in `configs/rig/perception_munich.yaml`
+(`table:` and `goal_xy_yaw:`, see [Optional: base approach](#optional-base-approach-p)),
+and one dry pass with `--approach-only` from that section. Give the rough start
+pose `<x,y,yaw>` in the table frame; the approach runs before the arms activate
+and does not count against `--seconds`. It has never driven this base yet.
+
+**P — rollout with the approach (right arm only, async inference,
+observation-time chunk base, offset splice, replan every 12 steps, gripper
+latch, 120 s).**
+```bash
+R=ap00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --approach perception --approach-profile configs/rig/perception_munich.yaml --approach-start-xy-yaw <x,y,yaw> --approach-vision-hz 4 --approach-dump outputs/rig/approach_${R}_$TS --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
+```
+The base navigates to `goal_xy_yaw`, settles, then the `a05` rollout below starts from the parked pose.
+
+**Option B — position the base by hand (how the `a05` reference was run).**
+Park the base in front of the table and align it against the corpus with the
+overlay tools from [Arms and scene](#arms-and-scene-apm): capture with
+[`scripts/capture_head.py`](../scripts/capture_head.py), compare with
+[`tools/rig_probes/overlay_latest.sh`](../tools/rig_probes/overlay_latest.sh)
+(mean `|diff|` ≈ 30 = placed) or watch
+[`tools/rig_probes/live_overlay.py`](../tools/rig_probes/live_overlay.py) while
+nudging, then confirm the pad row with
+[`tools/rig_probes/pad_centroid.sh`](../tools/rig_probes/pad_centroid.sh).
+
 **P — the reference rollout (`a05`): base parked by hand, right arm only,
 async inference, observation-time chunk base, offset splice, replan every 12
-steps, gripper latch, 120 s. Video on, E-stop in hand.**
+steps, gripper latch, 120 s.**
 ```bash
 R=a05; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
 ```
-Set `R` to the run label being recorded; expect it to reach the demonstration's own grasp pose, not a confirmed pick — no approach runs on `--world real` unless `--approach perception …` is passed (see below).
+Set `R` to the run label being recorded; expect it to reach the demonstration's own grasp pose, not a confirmed pick.
 
 **C — after every rollout.**
 ```bash

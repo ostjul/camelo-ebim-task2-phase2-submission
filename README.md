@@ -6,13 +6,13 @@ rig: a mobile dual-Franka-FR3 "TMR" base, ZED-M head camera, two RealSense
 D405 wrist cameras. An **ACT** policy checkpoint
 ([`ostjul/camelo-ebim-task2-act-s27a15`](https://huggingface.co/ostjul/camelo-ebim-task2-act-s27a15))
 is served from a remote GPU box; an **executor** runs natively on the station
-laptop and drives the arms at 20 Hz; an optional **perception-based base
-approach** ships off by default. This README is the manual for running that
+laptop and drives the arms at 20 Hz; a **perception-based base
+approach** can drive the base to the table first, or the base is parked by hand. This README is the manual for running that
 setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). **Read [Status](#status) before
 running anything on hardware: no scored grasp has succeeded on this rig yet.**
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `40af6fa`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `7fc268d`).
 
 ## How it runs
 
@@ -43,7 +43,7 @@ closed to the internet.
 3. [Bring up the robot](docs/CHEATSHEET.md#phase-0-bring-up-ack) **(A/C/K)** — clock sync, arm/gripper stack, cameras, the four numbers `4 0 2 1`.
 4. [Home the arms and place the scene](docs/CHEATSHEET.md#arms-and-scene-apm) **(A/P/M)** — home pose, base/table overlay, pad row, spine height, camera contract.
 5. [Connect the station to the server](docs/CHEATSHEET.md#tunnel-and-dummy-client-tp) **(T/P)** — the tunnel, then the dummy client before **every** rollout.
-6. [Run the policy](docs/CHEATSHEET.md#rollout-p) **(P)** — the `a05` reference rollout, the after-rollout check, the pass table, scoring.
+6. [Run the policy](docs/CHEATSHEET.md#rollout-p) **(P)** — the base either driven by the perception approach or parked by hand and aligned with the overlay, then the `a05` rollout line, the after-rollout check, the pass table, scoring.
 7. [Optional: drive the base](docs/CHEATSHEET.md#optional-base-approach-p) **(P)** — off by default; needs two operator measurements first.
 8. [Wind-down](docs/CHEATSHEET.md#wind-down-a) **(A)** — cameras and tunnel first, arms down last.
 
@@ -81,7 +81,7 @@ station pixi shell (everything camelo), **K** = station camera launcher,
 
 ## Quick run
 
-The five blocks that make the remote policy move the arm. Everything between
+The blocks that make the remote policy move the arm. Everything between
 them (bring-up, scene, checks, scoring, wind-down) is in the
 [cheat sheet](docs/CHEATSHEET.md); do not skip it on hardware.
 
@@ -131,11 +131,18 @@ python -u scripts/run_dummy_client.py --server ws://127.0.0.1:8767 --rate 2 --se
 ```
 Every request must answer `chunk=(21, 15)` with no reconnects, else the tunnel or the server is down.
 
-**P — the reference rollout (`a05`): base parked by hand, right arm only, async inference, observation-time chunk base, offset splice, replan every 12 steps, gripper latch, 120 s. Video on, E-stop in hand, arms homed and scene placed first (cheat sheet steps 3–4).**
+**P — the rollout. Two options for the base; the arms are homed and the scene placed first (cheat sheet step 4).**
+
+*Option A, the perception approach drives the base* ([cheat sheet](docs/CHEATSHEET.md#rollout-p)): needs `start_base.bash` on the companion, the `table:` and `goal_xy_yaw:` measurements in `configs/rig/perception_munich.yaml`, and one `--approach-only` dry pass ([cheat sheet](docs/CHEATSHEET.md#optional-base-approach-p)). `<x,y,yaw>` is the rough start pose in the table frame. Never driven on this base yet.
+```bash
+R=ap00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --approach perception --approach-profile configs/rig/perception_munich.yaml --approach-start-xy-yaw <x,y,yaw> --approach-vision-hz 4 --approach-dump outputs/rig/approach_${R}_$TS --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
+```
+
+*Option B, the base positioned by hand* (how the `a05` reference was run): park in front of the table and align against the corpus frame with [`tools/rig_probes/overlay_latest.sh`](tools/rig_probes/overlay_latest.sh) or the live [`tools/rig_probes/live_overlay.py`](tools/rig_probes/live_overlay.py), then [`pad_centroid.sh`](tools/rig_probes/pad_centroid.sh) ([cheat sheet](docs/CHEATSHEET.md#arms-and-scene-apm)).
 ```bash
 R=a05; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
 ```
-Expect it to reach the demonstration's own grasp pose; the close is the open problem (Status). Then the [after-rollout check and pass table](docs/CHEATSHEET.md#rollout-p).
+Both: right arm only, async inference, observation-time chunk base, offset splice, replan every 12 steps, gripper latch, 120 s, video on, E-stop in hand. Expect the arm to reach the demonstration's own grasp pose; the close is the open problem (Status). Then the [after-rollout check and pass table](docs/CHEATSHEET.md#rollout-p).
 
 ## Troubleshooting
 
