@@ -2,7 +2,7 @@
 
 One block per step: **terminal → command → one sentence.** This is the
 terminal-by-terminal procedure behind the README's session flow, in the
-order a session runs it. Release `v0.1.0` (2026-09-09, build `bec196f`), image
+order a session runs it. Release `v0.1.0` (2026-09-09, build `c96dcbf`), image
 `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0`.
 
 ## Terminal legend
@@ -175,11 +175,11 @@ and does not count against `--seconds`. It has never driven this base yet.
 observation-time chunk base, offset splice, replan every 12 steps, gripper
 latch, 120 s).**
 ```bash
-R=ap00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --approach perception --approach-profile configs/rig/perception_munich.yaml --approach-vision-hz 4 --approach-dump outputs/rig/approach_${R}_$TS --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
+R=approach00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --approach perception --approach-profile configs/rig/perception_munich.yaml --approach-vision-hz 4 --approach-dump outputs/rig/approach_${R}_$TS --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/rollout_${R}_$TS.npz --joint-csv outputs/rig/rollout_${R}_$TS.csv > outputs/rig/rollout_${R}_$TS.log 2>&1; echo "exit=$?"
 ```
-The base navigates to `goal_xy_yaw`, settles, then the `a05` rollout below starts from the parked pose.
+The base navigates to `goal_xy_yaw`, settles, then the manipulation rollout (the same policy line as option B) starts from the parked pose.
 
-**Option B — position the base by hand (how the `a05` reference was run).**
+**Option B — position the base by hand (how the reference runs were made).**
 Park the base in front of the table and align it against the corpus with the
 overlay tools from [Arms and scene](#arms-and-scene-apm): capture with
 [`scripts/capture_head.py`](../scripts/capture_head.py), compare with
@@ -189,11 +189,11 @@ overlay tools from [Arms and scene](#arms-and-scene-apm): capture with
 nudging, then confirm the pad row with
 [`tools/rig_probes/pad_centroid.sh`](../tools/rig_probes/pad_centroid.sh).
 
-**P — the reference rollout (`a05`): base parked by hand, right arm only,
+**P — the manipulation rollout, base parked by hand: right arm only,
 async inference, observation-time chunk base, offset splice, replan every 12
 steps, gripper latch, 120 s.**
 ```bash
-R=a05; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
+R=manual00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/rollout_${R}_$TS.npz --joint-csv outputs/rig/rollout_${R}_$TS.csv > outputs/rig/rollout_${R}_$TS.log 2>&1; echo "exit=$?"
 ```
 Set `R` to the run label being recorded; expect it to reach the demonstration's own grasp pose, not a confirmed pick.
 
@@ -205,10 +205,10 @@ Then paste the tail of the rollout log for scoring.
 
 **P — pass table for the rollout (grep the log rather than eyeballing it).**
 ```bash
-grep 'policy chunk' outputs/rig/t6a_${R}_$TS.log | tail -20
+grep 'policy chunk' outputs/rig/rollout_${R}_$TS.log | tail -20
 ```
 ```bash
-grep -E 'rollout stats:|leash telemetry:' outputs/rig/t6a_${R}_$TS.log
+grep -E 'rollout stats:|leash telemetry:' outputs/rig/rollout_${R}_$TS.log
 ```
 | field | where | pass |
 | --- | --- | --- |

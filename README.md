@@ -11,7 +11,7 @@ approach** can drive the base to the table first, or the base is parked by hand.
 setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). Read [Status](#status) before running anything on hardware.
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `bec196f`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `c96dcbf`).
 
 ## How it runs
 
@@ -42,7 +42,7 @@ closed to the internet.
 3. [Bring up the robot](docs/CHEATSHEET.md#phase-0-bring-up-ack) **(A/C/K)** — clock sync, arm/gripper stack, cameras, the four numbers (`4 0 2 1`; the first may be 5 or 6 with other controllers up).
 4. [Home the arms and place the scene](docs/CHEATSHEET.md#arms-and-scene-apm) **(A/P/M)** — home pose, base/table overlay, pad row, spine height, camera contract.
 5. [Connect the station to the server](docs/CHEATSHEET.md#tunnel-and-dummy-client-tp) **(T/P)** — the tunnel, then the dummy client before **every** rollout.
-6. [Run the policy](docs/CHEATSHEET.md#rollout-p) **(P)** — the base either driven by the perception approach or parked by hand and aligned with the overlay, then the `a05` rollout line, the after-rollout check, the pass table, scoring.
+6. [Run the policy](docs/CHEATSHEET.md#rollout-p) **(P)** — the base either driven by the perception approach or parked by hand and aligned with the overlay, then the manipulation rollout line, the after-rollout check, the pass table, scoring.
 7. [Optional: drive the base](docs/CHEATSHEET.md#optional-base-approach-p) **(P)** — off by default; needs two operator measurements first.
 8. [Wind-down](docs/CHEATSHEET.md#wind-down-a) **(A)** — cameras and tunnel first, arms down last.
 
@@ -159,12 +159,12 @@ Every request must answer `chunk=(21, 15)` with no reconnects, else the tunnel o
 
 *Option A, the perception approach drives the base* ([cheat sheet](docs/CHEATSHEET.md#rollout-p)): needs `start_base.bash` on the companion, the `table:` and `goal_xy_yaw:` measurements in `configs/rig/perception_munich.yaml`, and one `--approach-only` dry pass ([cheat sheet](docs/CHEATSHEET.md#optional-base-approach-p)). The profile seeds the start pose `4.35, 2.6, -3.142`; `--approach-start-xy-yaw x,y,yaw` overrides it. Never driven on this base yet.
 ```bash
-R=ap00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --approach perception --approach-profile configs/rig/perception_munich.yaml --approach-vision-hz 4 --approach-dump outputs/rig/approach_${R}_$TS --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
+R=approach00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --approach perception --approach-profile configs/rig/perception_munich.yaml --approach-vision-hz 4 --approach-dump outputs/rig/approach_${R}_$TS --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/rollout_${R}_$TS.npz --joint-csv outputs/rig/rollout_${R}_$TS.csv > outputs/rig/rollout_${R}_$TS.log 2>&1; echo "exit=$?"
 ```
 
-*Option B, the base positioned by hand* (how the `a05` reference was run): park in front of the table and align against the corpus frame with [`tools/rig_probes/overlay_latest.sh`](tools/rig_probes/overlay_latest.sh) or the live [`tools/rig_probes/live_overlay.py`](tools/rig_probes/live_overlay.py), then [`pad_centroid.sh`](tools/rig_probes/pad_centroid.sh) ([cheat sheet](docs/CHEATSHEET.md#arms-and-scene-apm)).
+*Option B, the base positioned by hand* (how the reference runs were made): park in front of the table and align against the corpus frame with [`tools/rig_probes/overlay_latest.sh`](tools/rig_probes/overlay_latest.sh) or the live [`tools/rig_probes/live_overlay.py`](tools/rig_probes/live_overlay.py), then [`pad_centroid.sh`](tools/rig_probes/pad_centroid.sh) ([cheat sheet](docs/CHEATSHEET.md#arms-and-scene-apm)).
 ```bash
-R=a05; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
+R=manual00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/rollout_${R}_$TS.npz --joint-csv outputs/rig/rollout_${R}_$TS.csv > outputs/rig/rollout_${R}_$TS.log 2>&1; echo "exit=$?"
 ```
 Both: right arm only, async inference, observation-time chunk base, offset splice, replan every 12 steps, gripper latch, 120 s, video on, E-stop in hand. Expect the arm to reach the demonstration's own grasp pose; the close is the open problem (Status). Then the [after-rollout check and pass table](docs/CHEATSHEET.md#rollout-p).
 
@@ -187,7 +187,7 @@ Both: right arm only, async inference, observation-time chunk base, offset splic
 ## Status
 
 - The closed-loop remote-policy pipeline works end to end: activation to first command in 0.56 s, 0 starved/dropped/stale chunks across five 30 s regression rollouts; base/table placement is reproducible by head-camera overlay.
-- The best executor line (async inference, observation-time chunk base, offset splice — the `a05` reference above) reached the demonstration's own grasp pose, L2 ≈ 0.08–0.09 rad at 24–48 s into a 120 s run.
+- The best executor line (async inference, observation-time chunk base, offset splice — the reference configuration above) reached the demonstration's own grasp pose, L2 ≈ 0.08–0.09 rad at 24–48 s into a 120 s run.
 - That line closed on the pad once in an unscored probe, but the close ramps over ≈3 s against the demos' ≈1 s, long enough for the arm to drift off the pad first.
 - The base approach is offline-validated only: `table` / `goal_xy_yaw` are `null` in the profile and it has never driven this base during the test week due to limited time.
 
@@ -241,6 +241,10 @@ Apache-2.0 (`LICENSE`). Team **Camelo** — point of contact on the submission i
 
 ## Demo
 
-The `a05` line on the rig: approach to the demonstration's grasp pose and the close, right arm, remote ACT policy over the tunnel (cut 1–8 s of the session video; [mp4](media/manipulation.mp4)).
+**Manipulation.** The reference rollout on the rig: the right arm moves to the demonstration's grasp pose and closes, driven by the remote ACT policy over the tunnel (seconds 1–8 of the session video; [mp4](media/manipulation.mp4)).
 
 ![ACT rollout on the Munich rig](media/manipulation.gif)
+
+**Perception-based approach.** Head-camera view while the base drives toward the table: the tabletop segmentation and the projected table model that the pose filter locks onto (option A; [mp4](media/approach.mp4)).
+
+![Perception-based base approach](media/approach.gif)
