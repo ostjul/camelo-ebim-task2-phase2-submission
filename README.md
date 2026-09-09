@@ -11,7 +11,7 @@ approach** can drive the base to the table first, or the base is parked by hand.
 setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). Read [Status](#status) before running anything on hardware.
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `d86ee2a`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `14cf53a`).
 
 ## How it runs
 
@@ -79,6 +79,8 @@ station pixi shell (everything camelo), **K** = station camera launcher,
 **G** = the GPU box.
 
 ## Quick run
+
+**Before anything else: the spine must be at 434 mm**, the height every demonstration was recorded at (spine reach 0–770 mm). Jog it there and confirm with `python -u scripts/read_spine.py` (prints `OK` within 10 mm); a different height changes the head-camera view the policy was trained on.
 
 The blocks that make the remote policy move the arm. Everything between
 them (scene placement, checks, scoring, wind-down) is in the

@@ -2,8 +2,13 @@
 
 One block per step: **terminal → command → one sentence.** This is the
 terminal-by-terminal procedure behind the README's session flow, in the
-order a session runs it. Release `v0.1.0` (2026-09-09, build `d86ee2a`), image
+order a session runs it. Release `v0.1.0` (2026-09-09, build `14cf53a`), image
 `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0`.
+
+**Before anything else: the spine must be at 434 mm**, the height every
+demonstration was recorded at. Jog it there and confirm with
+`python -u scripts/read_spine.py` (see [Arms and scene](#arms-and-scene-apm));
+a different height changes the head-camera view the policy was trained on.
 
 ## Terminal legend
 
