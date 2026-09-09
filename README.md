@@ -12,7 +12,7 @@ setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). **Read [Status](#status) before
 running anything on hardware: no scored grasp has succeeded on this rig yet.**
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `5b4348e`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `728440c`).
 
 ## How it runs
 
@@ -40,7 +40,7 @@ closed to the internet.
 
 1. [Start the policy server](docs/CHEATSHEET.md#policy-server-g) **(G)** — the ACT checkpoint in the released image.
 2. [Install the executor on the station](docs/CHEATSHEET.md#install-on-the-station-p-once) **(P, once)** — clone, pixi shell, editable install, camelo's own DDS profile.
-3. [Bring up the robot](docs/CHEATSHEET.md#phase-0-bring-up-ack) **(A/C/K)** — clock sync, arm/gripper stack, cameras, the four numbers `4 0 2 1`.
+3. [Bring up the robot](docs/CHEATSHEET.md#phase-0-bring-up-ack) **(A/C/K)** — clock sync, arm/gripper stack, cameras, the four numbers (`4 0 2 1`; the first may be 5 or 6 with other controllers up).
 4. [Home the arms and place the scene](docs/CHEATSHEET.md#arms-and-scene-apm) **(A/P/M)** — home pose, base/table overlay, pad row, spine height, camera contract.
 5. [Connect the station to the server](docs/CHEATSHEET.md#tunnel-and-dummy-client-tp) **(T/P)** — the tunnel, then the dummy client before **every** rollout.
 6. [Run the policy](docs/CHEATSHEET.md#rollout-p) **(P)** — the base either driven by the perception approach or parked by hand and aligned with the overlay, then the `a05` rollout line, the after-rollout check, the pass table, scoring.
@@ -127,9 +127,9 @@ ssh companion
 TMR_WS=~/ros2_ws setsid nohup bash ~/start_upper.bash --restart > ~/start_upper.log 2>&1 < /dev/null &  tail -f ~/start_upper.log
 ```
 ```bash
-ps -eo pid,etime,args | awk '/ros2_control_n[o]de/' | wc -l; grep -c -iE 'FATAL|reflex|communication_constraints|died' ~/start_upper.log; ps -eo pid,etime,args | awk '/robotiq_gripper_cli[e]nt/' | wc -l; ps -eo pid,args | awk '/start_upp[e]r/' | wc -l    # want 4, 0, 2, 1
+ps -eo pid,etime,args | awk '/ros2_control_n[o]de/' | wc -l; grep -c -iE 'FATAL|reflex|communication_constraints|died' ~/start_upper.log; ps -eo pid,etime,args | awk '/robotiq_gripper_cli[e]nt/' | wc -l; ps -eo pid,args | awk '/start_upp[e]r/' | wc -l    # want 4 (5-6 with other controllers up), 0, 2, 1
 ```
-The companion clock must be within 0.05 s of the station; after ~40 s the four numbers must read `4 0 2 1` (controllers, fault lines, gripper clients, launcher). For option A below also start the base stack with `start_base.bash`. Site copies, if a machine lacks them: [`site/station/configs/sync_robot_clock.sh`](site/station/configs/sync_robot_clock.sh), [`site/companion/start_upper.bash`](site/companion/start_upper.bash), [`site/companion/start_base.bash`](site/companion/start_base.bash), [`site/companion/home/fastdds_udp_only.xml`](site/companion/home/fastdds_udp_only.xml).
+The companion clock must be within 0.05 s of the station; after ~40 s the four numbers must read `4 0 2 1` (controllers, fault lines, gripper clients, launcher). The first number is the `ros2_control_node` count: 4 with the arm stack alone, 5 or 6 when other controllers (e.g. the base stack) are up as well, which was fine in the tests; the other three must read exactly `0 2 1`. For option A below also start the base stack with `start_base.bash`. Site copies, if a machine lacks them: [`site/station/configs/sync_robot_clock.sh`](site/station/configs/sync_robot_clock.sh), [`site/companion/start_upper.bash`](site/companion/start_upper.bash), [`site/companion/start_base.bash`](site/companion/start_base.bash), [`site/companion/home/fastdds_udp_only.xml`](site/companion/home/fastdds_udp_only.xml).
 
 **K — cameras, then verify the wrists are 640×480 ([cheat sheet](docs/CHEATSHEET.md#phase-0-bring-up-ack)).**
 ```bash
@@ -174,7 +174,7 @@ Both: right arm only, async inference, observation-time chunk base, offset splic
 | Symptom | Cause | What to do |
 | --- | --- | --- |
 | Dummy client shows reconnects, or no `chunk=(21, 15)` reply | The tunnel died or the server behind it is down | Restart the tunnel (step 5), confirm the server is up (step 1), rerun the dummy client before the rollout |
-| `STALE JOINT STATE` abort while the four numbers still read `4 0 2 1` | The executor's state-age gate is tighter than the observed joint-state latency | Rerun with `--max-state-age-s 0.5` added |
+| `STALE JOINT STATE` abort while the four numbers are still healthy (`4 0 2 1`, first may be 5 or 6) | The executor's state-age gate is tighter than the observed joint-state latency | Rerun with `--max-state-age-s 0.5` added |
 | `check_obs` exits with `exit=3` | Wrists are still negotiating 848 wide instead of the corpus's 640×480 | Fix the wrist launch's `config_file` argument; `--allow-camera-shape-mismatch` only for a pipeline run, never a rollout |
 | `--start-pose-tol` refuses to start | The arm was left un-rehomed after a prior rollout | Re-home with `home_arms.py`; never widen the tolerance to get past this |
 | Overlay `mean|diff|` ≈ 95 | Base or table is roughly a metre off the corpus placement | Push the base/table back into place and recapture |

@@ -2,7 +2,7 @@
 
 One block per step: **terminal → command → one sentence.** This is the
 terminal-by-terminal procedure behind the README's session flow, in the
-order a session runs it. Release `v0.1.0` (2026-09-09, build `5b4348e`), image
+order a session runs it. Release `v0.1.0` (2026-09-09, build `728440c`), image
 `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0`.
 
 ## Terminal legend
@@ -80,11 +80,11 @@ Companion clock must be within 0.05 s of the station; redo every ~30 min with th
 ssh companion
 TMR_WS=~/ros2_ws setsid nohup bash ~/start_upper.bash --restart > ~/start_upper.log 2>&1 < /dev/null &  tail -f ~/start_upper.log
 ```
-Wait ~40 s, then the four numbers below must read `4 0 2 1`. `~/start_upper.bash` is the companion's own launcher; if it is missing, copy [`site/companion/start_upper.bash`](../site/companion/start_upper.bash) (and [`start_base.bash`](../site/companion/start_base.bash) for the base, [`home/fastdds_udp_only.xml`](../site/companion/home/fastdds_udp_only.xml) which it references) to the companion's home directory.
+Wait ~40 s, then the four numbers below must read `4 0 2 1`. The first number is the `ros2_control_node` count: 4 with the arm stack alone, 5 or 6 when other controllers (e.g. the base stack) are up as well, which was fine in the tests; the other three must read exactly `0 2 1`. `~/start_upper.bash` is the companion's own launcher; if it is missing, copy [`site/companion/start_upper.bash`](../site/companion/start_upper.bash) (and [`start_base.bash`](../site/companion/start_base.bash) for the base, [`home/fastdds_udp_only.xml`](../site/companion/home/fastdds_udp_only.xml) which it references) to the companion's home directory.
 
 **C — the four numbers.**
 ```bash
-ps -eo pid,etime,args | awk '/ros2_control_n[o]de/' | wc -l; grep -c -iE 'FATAL|reflex|communication_constraints|died' ~/start_upper.log; ps -eo pid,etime,args | awk '/robotiq_gripper_cli[e]nt/' | wc -l; ps -eo pid,args | awk '/start_upp[e]r/' | wc -l    # want 4, 0, 2, 1
+ps -eo pid,etime,args | awk '/ros2_control_n[o]de/' | wc -l; grep -c -iE 'FATAL|reflex|communication_constraints|died' ~/start_upper.log; ps -eo pid,etime,args | awk '/robotiq_gripper_cli[e]nt/' | wc -l; ps -eo pid,args | awk '/start_upp[e]r/' | wc -l    # want 4 (5-6 with other controllers up), 0, 2, 1
 ```
 Controllers, fault lines, gripper clients, launcher.
 
@@ -199,7 +199,7 @@ Set `R` to the run label being recorded; expect it to reach the demonstration's 
 
 **C — after every rollout.**
 ```bash
-ps -eo pid,etime,args | awk '/ros2_control_n[o]de/' | wc -l; grep -c -iE 'FATAL|reflex|communication_constraints|died' ~/start_upper.log; grep -c 'Rejecting GELLO' ~/start_upper.log; ps -eo pid,etime,args | awk '/robotiq_gripper_cli[e]nt/' | wc -l    # want 4, 0, 0, 2
+ps -eo pid,etime,args | awk '/ros2_control_n[o]de/' | wc -l; grep -c -iE 'FATAL|reflex|communication_constraints|died' ~/start_upper.log; grep -c 'Rejecting GELLO' ~/start_upper.log; ps -eo pid,etime,args | awk '/robotiq_gripper_cli[e]nt/' | wc -l    # want 4 (5-6 with other controllers up), 0, 0, 2
 ```
 Then paste the tail of the rollout log for scoring.
 
