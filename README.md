@@ -12,7 +12,7 @@ setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). **Read [Status](#status) before
 running anything on hardware: no scored grasp has succeeded on this rig yet.**
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `728440c`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `1513d29`).
 
 ## How it runs
 
@@ -190,9 +190,7 @@ Both: right arm only, async inference, observation-time chunk base, offset splic
 - The closed-loop remote-policy pipeline works end to end: activation to first command in 0.56 s, 0 starved/dropped/stale chunks across five 30 s regression rollouts; base/table placement is reproducible by head-camera overlay.
 - The best executor line (async inference, observation-time chunk base, offset splice — the `a05` reference above) reached the demonstration's own grasp pose, L2 ≈ 0.08–0.09 rad at 24–48 s into a 120 s run.
 - That line closed on the pad once in an unscored probe, but the close ramps over ≈3 s against the demos' ≈1 s, long enough for the arm to drift off the pad first.
-- **No scored grasp has succeeded on this rig.** Zero picks across the twelve closed-loop rollouts of the development window: the approach-and-pose problem is solved, gripper-close timing is not.
-- Scored block B2 stopped after 3 of 15 rollouts on a since-superseded executor line; it needs restarting on the offset-splice line, most likely with a proximity-gated gripper latch.
-- The base approach is offline-validated only: `table` / `goal_xy_yaw` are `null` in the profile and it has never driven this base.
+- The base approach is offline-validated only: `table` / `goal_xy_yaw` are `null` in the profile and it has never driven this base during the test week due to limited time.
 
 ## Repository layout
 
