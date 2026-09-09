@@ -12,7 +12,7 @@ setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). **Read [Status](#status) before
 running anything on hardware: no scored grasp has succeeded on this rig yet.**
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `77843d6`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `40af6fa`).
 
 ## How it runs
 
@@ -41,12 +41,11 @@ closed to the internet.
 1. [Start the policy server](docs/CHEATSHEET.md#policy-server-g) **(G)** — the ACT checkpoint in the released image.
 2. [Install the executor on the station](docs/CHEATSHEET.md#install-on-the-station-p-once) **(P, once)** — clone, pixi shell, editable install, camelo's own DDS profile.
 3. [Bring up the robot](docs/CHEATSHEET.md#phase-0-bring-up-ack) **(A/C/K)** — clock sync, arm/gripper stack, cameras, the four numbers `4 0 2 1`.
-4. [Watch the station](docs/CHEATSHEET.md#watcher-w-plain-shell-on-the-station) **(W)** — a memory watcher, left running for the whole session.
-5. [Home the arms and place the scene](docs/CHEATSHEET.md#arms-and-scene-apm) **(A/P/M)** — home pose, base/table overlay, pad row, spine height, camera contract.
-6. [Connect the station to the server](docs/CHEATSHEET.md#tunnel-and-dummy-client-tp) **(T/P)** — the tunnel, then the dummy client before **every** rollout.
-7. [Run the policy](docs/CHEATSHEET.md#rollout-p) **(P)** — the `a05` reference rollout, the after-rollout check, the pass table, scoring.
-8. [Optional: drive the base](docs/CHEATSHEET.md#optional-base-approach-p) **(P)** — off by default; needs two operator measurements first.
-9. [Wind-down](docs/CHEATSHEET.md#wind-down-a) **(A)** — cameras and tunnel first, arms down last.
+4. [Home the arms and place the scene](docs/CHEATSHEET.md#arms-and-scene-apm) **(A/P/M)** — home pose, base/table overlay, pad row, spine height, camera contract.
+5. [Connect the station to the server](docs/CHEATSHEET.md#tunnel-and-dummy-client-tp) **(T/P)** — the tunnel, then the dummy client before **every** rollout.
+6. [Run the policy](docs/CHEATSHEET.md#rollout-p) **(P)** — the `a05` reference rollout, the after-rollout check, the pass table, scoring.
+7. [Optional: drive the base](docs/CHEATSHEET.md#optional-base-approach-p) **(P)** — off by default; needs two operator measurements first.
+8. [Wind-down](docs/CHEATSHEET.md#wind-down-a) **(A)** — cameras and tunnel first, arms down last.
 
 ## Prerequisites
 
@@ -76,14 +75,14 @@ closed to the internet.
 
 **Terminal legend.** **M** = your Mac/workstation, **A** = companion
 (`ssh companion` from the station, arm/gripper/base stack), **C** = second
-companion login, **W** = station watcher, **T** = station tunnel, **P** =
+companion login, **T** = station tunnel, **P** =
 station pixi shell (everything camelo), **K** = station camera launcher,
 **G** = the GPU box.
 
 ## Quick run
 
 The five blocks that make the remote policy move the arm. Everything between
-them (bring-up, watcher, scene, checks, scoring, wind-down) is in the
+them (bring-up, scene, checks, scoring, wind-down) is in the
 [cheat sheet](docs/CHEATSHEET.md); do not skip it on hardware.
 
 **G — start the ACT policy server.**
@@ -132,7 +131,7 @@ python -u scripts/run_dummy_client.py --server ws://127.0.0.1:8767 --rate 2 --se
 ```
 Every request must answer `chunk=(21, 15)` with no reconnects, else the tunnel or the server is down.
 
-**P — the reference rollout (`a05`): base parked by hand, right arm only, async inference, observation-time chunk base, offset splice, replan every 12 steps, gripper latch, 120 s. Video on, E-stop in hand, arms homed and scene placed first (cheat sheet steps 3–5).**
+**P — the reference rollout (`a05`): base parked by hand, right arm only, async inference, observation-time chunk base, offset splice, replan every 12 steps, gripper latch, 120 s. Video on, E-stop in hand, arms homed and scene placed first (cheat sheet steps 3–4).**
 ```bash
 R=a05; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
 ```
@@ -142,14 +141,13 @@ Expect it to reach the demonstration's own grasp pose; the close is the open pro
 
 | Symptom | Cause | What to do |
 | --- | --- | --- |
-| Dummy client shows reconnects, or no `chunk=(21, 15)` reply | The tunnel died or the server behind it is down | Restart the tunnel (step 6), confirm the server is up (step 1), rerun the dummy client before the rollout |
+| Dummy client shows reconnects, or no `chunk=(21, 15)` reply | The tunnel died or the server behind it is down | Restart the tunnel (step 5), confirm the server is up (step 1), rerun the dummy client before the rollout |
 | `STALE JOINT STATE` abort while the four numbers still read `4 0 2 1` | The executor's state-age gate is tighter than the observed joint-state latency | Rerun with `--max-state-age-s 0.5` added |
 | `check_obs` exits with `exit=3` | Wrists are still negotiating 848 wide instead of the corpus's 640×480 | Fix the wrist launch's `config_file` argument; `--allow-camera-shape-mismatch` only for a pipeline run, never a rollout |
 | `--start-pose-tol` refuses to start | The arm was left un-rehomed after a prior rollout | Re-home with `home_arms.py`; never widen the tolerance to get past this |
 | Overlay `mean|diff|` ≈ 95 | Base or table is roughly a metre off the corpus placement | Push the base/table back into place and recapture |
 | A shifted or reordered pad row still scores "placed" | The mean-`|diff|` overlay only catches gross base/table misplacement, not a reordered row | Run `pad_centroid.sh --slot xNNN` before trusting any "placed" overlay score |
 | `Rejecting GELLO` count > 0 after a rollout | The arm-command stream to the controller was not accepted at some point during the run | Do not trust the rollout; check `~/start_upper.log` for FATAL lines and re-home before the next attempt |
-| A watched RSS climbs past +1 GB | A station process (camera/bridge node) is leaking memory | Abort the session; do not start a rollout on a climbing watcher |
 | Wrong chunk shape or no response on the expected port | 8767 is ACT; a different server may be listening, or the tunnel forwards the wrong port | Match the tunnel's `-L` and the dummy client's `--server` port to the server actually running; a listener existing is not proof it is the right one |
 | `FASTRTPS_DEFAULT_PROFILES_FILE` is not camelo's own profile | The site's default profile has no socket buffer sizes and drops fragmented camera frames | `export` camelo's own rendered profile (step 2) before starting anything; wrists otherwise drop to 10–15 Hz |
 | Gripper open fraction reads < 0.99 before a block starts | The gripper is still biased from a prior grasp attempt | Re-open the gripper and confirm the measured open fraction reads ≥ 0.99 before rollout 0 |

@@ -2,14 +2,13 @@
 
 One block per step: **terminal → command → one sentence.** This is the
 terminal-by-terminal procedure behind the README's session flow, in the
-order a session runs it. Release `v0.1.0` (2026-09-09, build `77843d6`), image
+order a session runs it. Release `v0.1.0` (2026-09-09, build `40af6fa`), image
 `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0`.
 
 ## Terminal legend
 
 **M** = your Mac/workstation, **A** = companion (`ssh companion` from the
-station, arm/gripper/base stack), **C** = second companion login, **W** =
-station watcher, **T** = station tunnel, **P** = station pixi shell
+station, arm/gripper/base stack), **C** = second companion login, **T** = station tunnel, **P** = station pixi shell
 (everything camelo), **K** = station camera launcher, **G** = the GPU box.
 
 ## Policy server (G)
@@ -100,20 +99,6 @@ Starts the ZED head camera and both D405 wrists; the wrists must run at 640×480
 grep -o "stream_type: Color.*Width: [0-9]*, Height: [0-9]*" $(ls -t ~/cameras_*.log | head -1) | sort | uniq -c
 ```
 Expect `2 × ... Width: 640, Height: 480`; an `848` means the wrist launch regressed.
-
-## Watcher (W, plain shell on the station)
-
-**W — pick the PIDs once.**
-```bash
-TS=$(date +%Y%m%d_%H%M%S); ps -eo pid,args | awk '/gello_pub[l]isher|realsense2_camera_n[o]de|zed_open_captur[e]|pedal_state_pub[l]isher|mode_mana[g]er|spine_brid[g]e|spine_state_pub[l]isher|mobile_base_state_brid[g]e|labs_pedal_brid[g]e/' | tee ~/camelo/camelo-ebim/outputs/rig/t2_pids_$TS.txt; PIDS=$(awk '{print $1}' ~/camelo/camelo-ebim/outputs/rig/t2_pids_$TS.txt | paste -sd,); echo "$PIDS"
-```
-Lists the station's camera/bridge processes; the echo must print a comma list of PIDs.
-
-**W — the loop (leave it running).**
-```bash
-while :; do { date +%T; ps -o pid,rss,etime,cmd -p "$PIDS"; free -m | awk '/^Mem:/{print "MEM used="$3" free="$4}'; echo; } >> ~/camelo/camelo-ebim/outputs/rig/t2_rss_$TS.log; sleep 5; done
-```
-Every watched RSS must stay flat (±50 MB); abort the session at +1 GB on any PID.
 
 ## Arms and scene (A/P/M)
 
@@ -241,7 +226,7 @@ Parks the base and exits — no arm activation, no policy; drop `--approach-only
 
 ## Wind-down (A)
 
-Ctrl+C in **W**, **K**, **T**; then in **A**:
+Ctrl+C in **K** and **T**; then in **A**:
 ```bash
 pkill -INT -f start_upper.bash; sleep 8; ps -eo pid,etime,args | awk '/robotiq_gripper_cli[e]nt|ros2_control_n[o]de|ros2 laun[c]h|start_upp[e]r/' | cut -c1-100    # want nothing; kill any leftover PID by hand, then: exit
 ```
