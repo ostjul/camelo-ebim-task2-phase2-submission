@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+outputs/rig/*.log
+outputs/rig/*.csv
+outputs/rig/*.npz
+outputs/rig/fastdds_camelo.xml
+outputs/rig/live_head_*/

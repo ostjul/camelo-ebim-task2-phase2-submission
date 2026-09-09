@@ -86,17 +86,27 @@ STAGE_FINE = "finegrained_start_position"
 
 
 def build_stages(
-    *, finegrained_start_position: bool = True, base_only: bool = False
+    *,
+    finegrained_start_position: bool = True,
+    skip_spine: bool = False,
+    base_only: bool = False,
 ) -> tuple[str, ...]:
     """Assemble the approach stage list; fine trim is opt-in/out in one place.
 
-    ``base_only`` (real robot): navigate → done. No spine hold (the rig's
-    spine state resolves to a finite 0.0 and its height is fixed), and no
-    arm stages — arms are activated and parked by the T6 flow afterwards.
+    ``base_only`` (real robot) is the strongest cut: navigate → done. No
+    spine hold (the rig's spine state resolves to a finite 0.0 and its
+    height is fixed), and no arm stages — arms are activated and parked by
+    the T6 flow afterwards.
+
+    ``skip_spine`` drops "spine" from the list entirely (not just a gate
+    that passes instantly): ``reset()`` sets ``self.stage = self.stages[0]``,
+    so removing it here is what actually makes the FSM start at the next
+    stage — mutating ``self.stage`` after construction does not survive
+    ``run_approach``'s own ``approach.reset()`` call at the top of the loop.
     """
     if base_only:
         return ("navigate", "done")
-    stages = ["spine", "navigate", "place_arms"]
+    stages = ["navigate", "place_arms"] if skip_spine else ["spine", "navigate", "place_arms"]
     if finegrained_start_position:
         stages.append(STAGE_FINE)
     stages.extend(["start_pose", "done"])
@@ -121,7 +131,8 @@ TASK2_APPROACH_WAYPOINTS: tuple[Waypoint, ...] = (
     Waypoint("wp1", 4.4, 2.9, math.radians(-90.0), _COARSE_XY, _COARSE_YAW),
     Waypoint("wp2", 3.5, 2.9, math.radians(-90.0), _COARSE_XY, _COARSE_YAW),
     Waypoint("wp3", 3.5, 3.05, math.radians(-90.0), _COARSE_XY, _COARSE_YAW),
-    # Waypoint("goal", 2.10, 3.04, math.radians(-90.0), _FINE_XY, _FINE_YAW), # Changed from 3.05 to 3.04 as the arm is always colliding with the holder
+    # Waypoint("goal", 2.10, 3.04, math.radians(-90.0), _FINE_XY, _FINE_YAW),
+    # Changed from 3.05 to 3.04 as the arm is always colliding with the holder
     Waypoint("goal", 2.10, 3.05, math.radians(-90.0), _FINE_XY, _FINE_YAW),
 )
 
@@ -776,6 +787,7 @@ class ApproachController:
         super_fine_xy_m: float = _SUPER_FINE_XY,
         super_fine_yaw_rad: float = _SUPER_FINE_YAW,
         fine_trim: PulseSettleTrim | None = None,
+        skip_spine: bool = False,
     ):
         if not waypoints:
             raise ValueError("waypoints must be non-empty")
@@ -784,7 +796,9 @@ class ApproachController:
         self.finegrained_start_position = bool(finegrained_start_position)
         self.base_only = bool(base_only)
         self.stages = build_stages(
-            finegrained_start_position=self.finegrained_start_position, base_only=self.base_only
+            finegrained_start_position=self.finegrained_start_position,
+            skip_spine=bool(skip_spine),
+            base_only=self.base_only,
         )
         self.arm_ready_left = np.asarray(arm_ready_left, dtype=np.float64)
         self.arm_ready_right = np.asarray(arm_ready_right, dtype=np.float64)

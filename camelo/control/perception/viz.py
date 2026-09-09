@@ -52,8 +52,8 @@ _BEV_TABLE_FILL = (70, 78, 62)
 _BEV_TABLE_EDGE = (210, 210, 180)
 _BEV_WP = (180, 180, 80)
 _BEV_WP_CUR = (255, 220, 40)
-_BEV_FOV = (80, 180, 255, 70)
-_BEV_GT_FOV = (180, 80, 255, 70)
+_BEV_FOV = (80, 180, 255, 55)
+_BEV_GT_FOV = (180, 80, 255, 55)
 _FOV_REACH_M = 2.4
 _GOAL_CIRCLE_M = 0.20
 _TRAIL_DASH_M = 0.06
@@ -366,6 +366,14 @@ def draw_head_overlay(
     for name in CHANNELS:
         if name not in raw or name == primary:
             continue
+        # "gt" AABB (odom) and "odometry" AABB commented out on request:
+        # clutter that duplicates/contradicts the "fused" (primary) AABB
+        # the robot actually drives on — same reasoning as the BEV "gt"
+        # wedge removed earlier (real odom is not sim truth and lives in
+        # an unrelated frame off-rig). "perception" (a real lock) still
+        # draws when present.
+        if name in ("gt", "odometry"):
+            continue
         inverse = _pose_inverse(_xy_yaw(raw[name]), spine_m)
         if view_inv is None:
             view_inv = inverse
@@ -378,12 +386,14 @@ def draw_head_overlay(
     if primary is not None:
         inverse = _pose_inverse(_xy_yaw(raw[primary]), spine_m)
         view_inv = inverse
-        top = _visible_tabletop(world, inverse, intrinsics)
-        if len(top) >= 3:
-            overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-            ImageDraw.Draw(overlay).polygon(top, fill=(*TABLETOP_RGB, 80))
-            canvas = Image.alpha_composite(canvas.convert("RGBA"), overlay).convert("RGB")
-            draw = ImageDraw.Draw(canvas)
+        # Gold "tabletop rectangle" fill commented out on request — the
+        # AABB wire below (top_rgb=TABLETOP_RGB) still outlines it.
+        # top = _visible_tabletop(world, inverse, intrinsics)
+        # if len(top) >= 3:
+        #     overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        #     ImageDraw.Draw(overlay).polygon(top, fill=(*TABLETOP_RGB, 80))
+        #     canvas = Image.alpha_composite(canvas.convert("RGBA"), overlay).convert("RGB")
+        #     draw = ImageDraw.Draw(canvas)
         _draw_aabb_wire(
             draw, world, inverse, intrinsics, width, height,
             top_rgb=TABLETOP_RGB, box_rgb=BOX_RGB, top_width=3, box_width=2,
@@ -404,34 +414,42 @@ def draw_head_overlay(
         if path:
             _draw_path_head(draw, path, view_inv, intrinsics, width, height)
 
-    for corner in features.corners:
-        u, v = corner.u, corner.v
-        color = FOOT_RGB if corner.kind == "foot" else TOP_RGB
-        if corner.kind == "foot":
-            draw.ellipse((u - 7, v - 7, u + 7, v + 7), outline=color, width=2)
-            draw.line((u - 10, v, u + 10, v), fill=color, width=2)
-        else:
-            draw.rectangle((u - 7, v - 7, u + 7, v + 7), outline=color, width=2)
+    # "tabletop corner" / "foot corner" markers commented out on request.
+    # for corner in features.corners:
+    #     u, v = corner.u, corner.v
+    #     color = FOOT_RGB if corner.kind == "foot" else TOP_RGB
+    #     if corner.kind == "foot":
+    #         draw.ellipse((u - 7, v - 7, u + 7, v + 7), outline=color, width=2)
+    #         draw.line((u - 10, v, u + 10, v), fill=color, width=2)
+    #     else:
+    #         draw.rectangle((u - 7, v - 7, u + 7, v + 7), outline=color, width=2)
 
-    # The corners the primary pose was actually fitted to — the rest are candidates.
-    primary_pose = raw.get(primary)
-    for u, v in getattr(primary_pose, "inlier_uv", ()) or ():
-        draw.ellipse((u - 4, v - 4, u + 4, v + 4), fill=INLIER_RGB)
+    # The corners the primary pose was actually fitted to — the rest are
+    # candidates. "corner used in fit" markers commented out on request.
+    # primary_pose = raw.get(primary)
+    # for u, v in getattr(primary_pose, "inlier_uv", ()) or ():
+    #     draw.ellipse((u - 4, v - 4, u + 4, v + 4), fill=INLIER_RGB)
 
     draw.text((12, 12), "\n".join([hud, *_cmd_lines(cmd, cmd_applied)]), fill=TEXT_RGB)
     items = [
         (SEGMENT_RGB, "edge segments"),
-        (TOP_RGB, "tabletop corner"),
-        (FOOT_RGB, "foot corner"),
+        # "tabletop corner" / "foot corner" legend entries commented out
+        # on request (their markers above are commented out too).
+        # (TOP_RGB, "tabletop corner"),
+        # (FOOT_RGB, "foot corner"),
     ]
     if surface is not None:
         items.insert(1, (SURFACE_RGB, "tabletop surface"))
     for name in CHANNELS:
-        if name in raw and name != primary:
+        # "gt" / "odometry" legend entries commented out on request (their
+        # AABB wires above are commented out too).
+        if name in raw and name != primary and name not in ("gt", "odometry"):
             items.append((_CHANNEL_RGB[name], _WIRE_LABEL[name]))
     if primary is not None:
-        items.append((INLIER_RGB, "corner used in fit"))
-        items.append((TABLETOP_RGB, "tabletop rectangle"))
+        # "corner used in fit" / "tabletop rectangle" legend entries
+        # commented out on request (their markers/fill above are too).
+        # items.append((INLIER_RGB, "corner used in fit"))
+        # items.append((TABLETOP_RGB, "tabletop rectangle"))
         items.append((BOX_RGB, _PRIMARY_LABEL[primary]))
     if view_inv is not None and walls:
         items.append((WALL_RGB, "wall"))
@@ -574,6 +592,12 @@ def draw_bev(
     # sidecars); the new mapping colours each trail like its channel.
     trail_map = trails if trails is not None else ({"fused": trail} if len(trail) >= 2 else {})
     for name in CHANNELS:
+        # "gt" commented out for now: on --world real it is raw odometry in
+        # its own un-anchored frame, not sim truth, and plotting it against
+        # est/fused (a different frame entirely until the seed is measured)
+        # just draws a distractingly large, meaningless offset.
+        if name == "gt":
+            continue
         pts = trail_map.get(name, ())
         if len(pts) >= 2:
             color = TRAIL_RGB if trails is None else _CHANNEL_RGB[name]
@@ -582,12 +606,22 @@ def draw_bev(
     raw = _resolve_poses(poses, gt, ego)
     fov = HEAD_HFOV_DEG if hfov_deg is None else float(hfov_deg)
     for name in CHANNELS:
-        if name not in raw:
+        if name == "gt" or name not in raw:
             continue
         pose = _xy_yaw(raw[name])
         wedge = _BEV_WEDGE_RGBA.get(name)
         if wedge is not None:
-            draw.polygon(_fov_wedge(xy, pose, fov), fill=wedge)
+            # draw.polygon(fill=(r,g,b,a)) on an ImageDraw.Draw(canvas,
+            # "RGBA") does NOT alpha-blend against existing canvas content —
+            # verified empirically (a pixel deep inside a wedge came back as
+            # the pure foreground colour, zero background blend, regardless
+            # of alpha). A separate transparent layer + alpha_composite is
+            # the pattern already proven to blend correctly elsewhere in
+            # this file (the tabletop fill in draw_head_overlay).
+            wedge_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+            ImageDraw.Draw(wedge_layer).polygon(_fov_wedge(xy, pose, fov), fill=wedge)
+            canvas = Image.alpha_composite(canvas, wedge_layer)
+            draw = ImageDraw.Draw(canvas, "RGBA")
         _draw_pose_marker(draw, xy, pose, _CHANNEL_RGB[name], _MARKER_SHAPE[name])
 
     status = "BEV located" if "fused" in raw else "BEV searching"
@@ -598,7 +632,7 @@ def draw_bev(
         items.append((GOAL_RGB, "goal 20 cm"))
         items.append((_BEV_WP_CUR, "waypoint"))
     for name in CHANNELS:
-        if name in raw:
+        if name != "gt" and name in raw:  # "gt" overlay commented out, see above
             items.append((_CHANNEL_RGB[name], _BEV_LABEL[name]))
     if trails is None and trail_map:
         items.append((TRAIL_RGB, "est trajectory"))

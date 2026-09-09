@@ -1,50 +1,92 @@
-# Perception profile for the Munich rig head camera (ZED-M, 1280x720, HD720
+# Perception profile for the Munich rig (ZED-M head camera, 1280x720 HD720
 # single eye from zed_open_capture_ros). The station's own config says the
-# "rect" topic is UNRECTIFIED; there is no camera_info on the rig.
+# "rect" topic is UNRECTIFIED, and there is no camera_info on the rig — so
+# both blocks below are needed, and neither has a live source to fall back to.
 #
-# camera: pinhole + OpenCV radial distortion. SELF-CALIBRATED 2026-09-05 from
-# the straightness of the workbench's own edges on seven real head frames
-# (outputs/rig/t5): k1 = -0.19 straightens the near edge from 25 px of bow to
-# < 1 px RMS. f is the ZED-M's nominal 90 deg HFOV (640 px at 1280 wide) — line
-# straightness cannot determine f, so replace fx/fy/cx/cy with the factory
-# calibration (or a checkerboard) before trusting metric distances.
-# undistort_scale shrinks the output focal length so the periphery stays in
-# frame: at 1.0 the near table corners at the parked pose land outside the
-# image and are dropped as border vertices; at 0.85 they sit ~60 px inside.
+# Select with:  --approach-profile configs/rig/perception_munich.yaml
+
+# ---------------------------------------------------------------------------
+# camera — ZED-M HD720 factory-style intrinsics + OpenCV radial distortion.
+#
+# CROSS-CHECKED against rigbag_20260903-165152 (2026-09-07). Solving f and k1
+# from a single frame of the workbench, using only "the tabletop is a
+# rectangle" + square pixels (independent of ego pose, spine height, mount
+# pitch and the table's size) gave f = 688 px and k1 = -0.172; these published
+# values sit 3.4 % away in f and reproduce the measurement's own residuals:
+#
+#   model                              ctrl-line rms   table-edge rms
+#   repo's old f=640  k1=-0.19            1.98 px         4.54 px
+#   solved from the bag f=688 k1=-0.172   1.57 px         2.77 px
+#   THESE values                          1.53 px         2.80 px
+#   no distortion at all                  2.52 px         4.10 px
+#
+# (ctrl-line = a known-straight world line, the curtain/floor junction, which
+# is not part of the table and so is an independent witness.) The residual f
+# difference is within the ~3 % uncertainty of the assumed tabletop aspect
+# ratio, and either value implies the OLD f=640 was ~10 % too short — which is
+# exactly what made the projected tabletop land INSIDE the real table's
+# borders.
 camera:
-  fx: 640.0
-  fy: 640.0
+  fx: 711.63
+  fy: 712.55
   cx: 640.0
   cy: 360.0
-  dist: [-0.19, 0.0, 0.0, 0.0]
-  undistort_scale: 0.85
-# surface_v_abs: the tabletop is a white laminate (V 181-198) in front of
-# white partitions (V 92-133) over a dark cabinet (V 20-44). The sim's
-# floor-relative threshold (floor + 45) admits the partitions and fuses them
-# with the table. An absolute threshold separates them with zero wall
-# leakage on all seven frames; 165 (not the 145 that first isolated the
-# table) keeps the robot's own shell — nearly as bright — out of the near
-# edge, so the hull's near corners are table corners, not crop vertices.
-surface_v_abs: 165
-# ignore_regions: [x0, y0, x1, y1] in the UNDISTORTED, scaled frame. The
-# base's white shell shows at both lower corners and bridges into the
-# tabletop blob at every threshold that keeps the tabletop whole; zeroing
-# these strips gave 5-6 tabletop corners on all seven frames (2026-09-05),
-# far-right within ~10 px across frames. Known gap: the far-left corner on
-# the live captures sits in a shadow and lands 40-80 px off — re-tune with
-# captures at the approach start poses if that corner is ever needed.
-ignore_regions:
-  - [0, 400, 40, 720]
-  - [1240, 400, 1280, 720]
+  # k1, k2, p1, p2
+  dist: [-0.1530, 0.01997, 0.0, 0.0]
+  # 1.0 = undistort at the calibrated focal length. Lower it only to keep a
+  # barrel-corrected periphery inside the canvas; every projection downstream
+  # then uses k_out, not k (profile.CameraModel.k_out).
+  undistort_scale: 1.0
+
+# ---------------------------------------------------------------------------
+# surface — tabletop segmentation. MEASURED on rigbag_20260903-165152
+# (2026-09-07, 13 frames spanning the whole approach; see the V/S survey in
+# outputs/rig/calib/).
+#
+#   tabletop   V p05 144, median 147-160, p95 166-173, S median 8-10
+#   curtains   V median 91-192, p95 207-255 (blown out where directly lit)
+#   floor      V median 23-35 close in, brighter far out
+#
+# Why the sim rule cannot work here, measured rather than assumed: parked at
+# the table the bottom of the frame IS the tabletop, so the floor sample reads
+# V 139-148 and the relative threshold becomes 184-193 — above the tabletop's
+# own 144-168, so the mask goes EMPTY. The sim's absolute fallback (V >= 170)
+# is above the tabletop too, so it recovers nothing. Both rules failing is
+# what left the splotchy scraps that the corner detector was reading as
+# "tabletop corners".
+#
+# So: floor-relative OFF, and an absolute BAND. v_min 135 sits between the
+# curtains' p95 (111-128 at close range) and the tabletop's p05 (144). v_max
+# 190 drops blown-out whites while clearing the tabletop's own p95 (173) with
+# margin.
+#
+# KNOWN GAP: at far range (robot still crossing the room) the tabletop is
+# small and the directly-lit curtains are large and equally unsaturated, so
+# largest_component still picks a curtain. No threshold in this file fixes
+# that — it needs evidence a global HSV rule does not have. Localisation at
+# the desk, which is what navigate/place_arms actually consume, is what these
+# values are tuned for.
+surface:
+  use_floor_relative: false
+  v_min: 135
+  v_max: 190
+  s_max: 60
+  abs_min_frac: 0.15
+  # The robot's own white shell shows at the lower corners. Left in, it
+  # bridges into the tabletop blob and its crop edge reads as a corner.
+  # [x0, y0, x1, y1] in the UNDISTORTED frame.
+  ignore_regions:
+    - [0, 400, 40, 720]
+    - [1240, 400, 1280, 720]
 
 # ---------------------------------------------------------------------------
 # Real-base drive (used with --world real --approach perception).
-# Everything below the `rig:` block that is `null` must be measured at the
-# rig by the operator (tape measure + ros2 CLI; procedure and frame
-# convention in the submission README §8). The team had no rig access after
-# this profile was written, so none of it has been measured and the
-# approach has never driven this base; the controller refuses to construct
-# while goal_xy_yaw is null.
+# Everything below that is `null` must be measured at the rig by the
+# operator (tape measure + ros2 CLI; procedure and frame convention in the
+# submission README §8). The team had no rig access after this profile was
+# written, so none of it has been measured and the approach has never
+# driven this base; the controller refuses to construct while goal_xy_yaw
+# is null.
 # ---------------------------------------------------------------------------
 rig:
   base_only: true          # navigate -> done; no spine hold, no arm stages

@@ -1,11 +1,11 @@
-# Camelo — EBiM Task 2 real-robot submission, release v0.1.0 (2026-09-06).
+# Camelo — EBiM Task 2 real-robot submission, release v0.1.0 (2026-09-09).
 # One service: the ACT policy server on the GPU box. The executor on the
 # rig is NOT a container (station rule C-3: no container participants on
-# the robot's DDS graph while its nodes run) — run it natively, README §7.
+# the robot's DDS graph while its nodes run) — run it natively, README "Install on the station".
 #
 #   docker compose up policy-server
 #   # then on the rig: python -u scripts/run_policy.py --world real --backend remote \
-#   #   --server ws://<gpu-box>:8767 ...          (README §7 for the full line)
+#   #   --server ws://<gpu-box>:8767 ...          (README "Rollout" for the full line)
 services:
   policy-server:
     image: ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0

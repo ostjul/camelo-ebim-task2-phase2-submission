@@ -29,10 +29,14 @@ fused pose that plan and PID always have from `t = 0`:
 
 ```mermaid
 flowchart TD
-  obs["ObsCollector.get_obs"] -->|"state, images.head, camera_info, t_sim"| feat["features.detect"]
+  obs["ObsCollector.get_obs"] -->|"state, images.head, camera_info, t_sim"| undist["features.undistort<br/>k_in → k_out"]
+  camprof["profile.PerceptionProfile<br/>configs/rig/*.yaml (sim default)"] -.->|"K, D when no live camera_info"| undist
+  camprof -.->|"tabletop V/S thresholds, ignore regions"| feat
+  undist -->|"undistorted head @ k_out (self._k_active)"| feat["features.detect"]
+  undist -->|"same undistorted head + k_out"| viz
   feat -->|"Features: instance mask, silhouette, corners, segments"| loc["TableLocalizer.solve"]
   tbl["TableModel.corners — frozen 8-pt world AABB"] -->|"8 world corners"| loc
-  geom["geometry.T_world_cam"] -->|"projection"| loc
+  geom["geometry.T_world_cam"] -->|"projection @ k_out"| loc
   loc -->|"z_perc(t) — absolute measurement or None; gates only, no prior"| kf["pose filter — Kalman<br/>rejects z_perc contradicting p_odom<br/>(the 180° twin)"]
   start["start pose — CLI --approach-start-xy-yaw<br/>sim Task 2: 4.4, 2.6, −π/2"] -->|"x₀, y₀, yaw₀ at t=0"| kf
   obs -->|"S_BASE_ODOM"| odomrel["relative odometry<br/>Δ = odom(t) ⊖ odom(t₀)"]
@@ -280,7 +284,7 @@ rigid body extruded to `z = 0`.
 
 ```mermaid
 flowchart TD
-  rgb["head RGB"] --> hsv["surface_mask — V ≥ floor median + 45, S ≤ 60"]
+  rgb["head RGB — already undistorted @ k_out, §1"] --> hsv["surface_mask — V ≥ floor median + 45, S ≤ 60"]
   hsv --> cc["largest_component — instance mask"]
   rgb --> hough["line_segments"]
   cc --> hull["silhouette: convex hull → approxPolyDP"]
@@ -305,7 +309,10 @@ flowchart TD
 ### 3.1 Instance, not a colour blob
 
 `surface_mask` is a cue. Pads and walls also look bright. `largest_component`
-keeps one blob; `Features.surface` is that instance. When the table fills
+keeps one blob; `Features.surface` is that instance. Which brightness rule
+runs is per scene (`SurfaceParams`, chosen by `--approach-profile`):
+sim uses the floor-relative threshold below, the Munich rig an absolute band
+— see `configs/rig/perception_munich.yaml` for that measurement. When the table fills
 the lower frame the floor sample *is* the table and the relative threshold
 goes empty; then a high-V low-S absolute mask (V≥170) recovers the
 instance. `silhouette` convex-hulls it so a gripper bite is not a tabletop
@@ -379,23 +386,42 @@ Isaac `Camera` prim uses the USD default film (`focalLength` 18.14756 /
 1108` at 1280×720).
 
 Live `K` comes from `/isaac/head_camera/camera_info` (BEST_EFFORT, same as
-images). Offline tests and ticks before CameraInfo arrives fall back to the
-60° square model. Distortion `D` is applied when non-zero; sim cameras are
-ideal pinhole.
+images). **The real rig publishes none at all** — and its topic name is
+misleading: `/head_camera/zed_node/rgb/color/rect/image`'s `rect` does
+**not** mean rectified; the station's own config says so.
 
-**Rig (no CameraInfo).** `--approach-profile configs/rig/perception_munich.yaml`
-supplies a `CameraModel` (`perception/profile.py`) when nothing is
-published: the ZED-M stream on `/head_camera/zed_node/rgb/color/rect/image`
-is *unrectified* (station config) and shows barrel distortion — the
-workbench's straight edges bow ~25 px. `k1 = −0.19` at the nominal 90° focal
-length (self-calibrated from edge straightness on seven real frames,
-2026-09-05) straightens them to < 1 px RMS; `undistort_scale = 0.85` keeps
-the near corners inside the frame. Line straightness cannot determine `f`,
-so the factory calibration replaces `fx, fy, cx, cy` before metric use.
-The same profile sets `surface_v_abs = 145`: the white partitions behind
-the table (V 92–133) pass the sim's floor-relative rule and fuse with the
-tabletop (V 181–198); the absolute threshold separates them with zero wall
-leakage. Live CameraInfo, if it ever appears, overrides the profile camera.
+**Scene profile (`--approach-profile`, diagram above).** Off that camera,
+`configs/rig/perception_munich.yaml` supplies a `CameraModel`
+(`perception/profile.py`) when nothing is published: the ZED-M stream on
+`/head_camera/zed_node/rgb/color/rect/image` is *unrectified* (station
+config) and shows barrel distortion — the workbench's straight edges bow
+~25 px. The published values are `fx = 711.63`, `fy = 712.55`,
+`dist = [-0.1530, 0.01997, 0, 0]`, `undistort_scale = 1.0`
+(`CameraModel.k_out` equals `k`, so no rescaling of the output focal
+length is needed at this `f`). They come from a cross-check against
+`rigbag_20260903-165152` (2026-09-07) that solves `f` and `k1` from one
+frame of the workbench using only "the tabletop is a rectangle" plus
+square pixels: 1.53 px RMS on a known-straight world line that is *not*
+part of the table, against 1.98 px for the earlier edge-straightness
+self-calibration (`f = 640`, `k1 = −0.19`, `undistort_scale = 0.85`) and
+2.52 px for no distortion at all. Line straightness alone cannot determine
+`f`, which is why the older value ran ~10 % short and projected the
+tabletop *inside* the real table's borders. Live CameraInfo always wins
+over a profile's camera when present.
+
+The same profile turns the floor-relative surface rule **off** and uses an
+absolute band, `v_min = 135` / `v_max = 190` (`surface:` block): the white
+partitions behind the table and the white tabletop are both unsaturated,
+the lower frame at the parked pose *is* tabletop, and the upper bound is
+what drops blown-out curtain whites that a lower bound alone keeps. Two
+`ignore_regions` strips mask the base's own near-white shell at the lower
+corners, which otherwise bridges into the tabletop blob.
+
+On a real rig the same file also carries the drive block (`rig:` — twist
+limits, gains and arrival tolerances, validated against
+`contracts.REAL_BASE_*`), the `table:` landmark and the `goal_xy_yaw` /
+`start_xy_yaw` poses in its frame; `--world real --approach perception`
+refuses to run without them.
 
 ## Limitations
 
@@ -411,7 +437,17 @@ leakage. Live CameraInfo, if it ever appears, overrides the profile camera.
   GT-vs-fused dump channels.
 - **Heuristic detection.** Brightness / Hough features, not learned; gates
   reject bad fits but cannot invent a missed table.
-- **No live obstacle sensing.** Clearance is mapped walls + the table AABB + base radius.
+- **The surface rule is per scene, and far range is still unsolved.** Sim's
+  floor-relative threshold assumes the bottom of the frame is floor; parked
+  at a table that fills it, the sample *is* the table, the threshold climbs
+  above it and the mask goes empty (measured on the Munich bag: sample V
+  139-148 → threshold 184-193 against a tabletop of 144-168, and the sim's
+  V ≥ 170 fallback misses it too). `configs/rig/perception_munich.yaml`
+  answers that with an absolute band. What no threshold there fixes: at
+  **far** range the tabletop is small while directly-lit curtains are large
+  and equally unsaturated, so `largest_component` still picks a curtain.
+- **No live obstacle sensing.** Clearance is mapped walls + the table AABB +
+  base radius.
 - **Sim twist is quantized.** PID output hits the pedal wire through
   `BaseQuantizer` — one axis at a time at fixed speed.
 - **CameraInfo bring-up.** Before the first info message, projection uses

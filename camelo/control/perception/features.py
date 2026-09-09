@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
+from camelo.control.perception.profile import SurfaceParams
 from camelo.control.perception.table import FOOT, TOP
 
 _CANNY_LO = 40
@@ -64,15 +65,17 @@ _FOOT_V_MIN_FRAC = 0.25
 # Surface cue. Thresholds are relative to this frame's floor brightness:
 # measured on perception_11, floor median V ~116 and tabletop V ~207, while
 # the cubicle wall that produced a false lock sits at ~150 and is excluded.
-_SURFACE_V_ABOVE_FLOOR = 45
-_SURFACE_S_MAX = 60
-_FLOOR_SAMPLE_FRAC = 0.55
+# The sim values live in SurfaceParams' defaults (profile.py) so a scene
+# YAML and this module cannot drift apart; these aliases stay for readers.
+_SURFACE_V_ABOVE_FLOOR = SurfaceParams.v_above_floor
+_SURFACE_S_MAX = SurfaceParams.s_max
+_FLOOR_SAMPLE_FRAC = SurfaceParams.floor_sample_frac
 # Absolute tabletop when the lower frame *is* the table (close-up at the
 # goal). perception_11: table V~207, wall ~150, floor ~116. Relative
 # contrast dies because the "floor" sample is already tabletop; this
 # threshold still separates the table from the cubicle wall.
-_SURFACE_V_ABS = 170
-_SURFACE_ABS_MIN_FRAC = 0.15
+_SURFACE_V_ABS = SurfaceParams.v_min
+_SURFACE_ABS_MIN_FRAC = SurfaceParams.abs_min_frac
 # A corner is a boundary, so its neighbourhood is part surface, part not.
 # All-surface (mid-tabletop) and no-surface (mid-floor) are both rejected.
 _SURFACE_DISK_PX = 15
@@ -84,7 +87,7 @@ _SURFACE_FRAC_HI = 0.90
 # the right crop, which starved the pose solve of a usable assignment.
 # Vertices on the image border are where the table leaves the frame.
 _SURFACE_OPEN_PX = 7
-_SURFACE_MIN_AREA_FRAC = 0.02
+_SURFACE_MIN_AREA_FRAC = SurfaceParams.min_area_frac
 _POLY_EPS_FRAC = 0.02
 _BORDER_PX = 8
 _SNAP_PX = 20
@@ -178,47 +181,60 @@ def line_segments(image: np.ndarray) -> tuple[Segment, ...]:
     )
 
 
+def _apply_ignore(mask: np.ndarray, params: SurfaceParams) -> np.ndarray:
+    """Zero fixed foreground boxes *before* connected components.
+
+    The robot's own shell sits in the frame's lower corners at every pose
+    and is as bright as the table; left in, it bridges into the tabletop
+    blob and its crop edge becomes a "corner".
+    """
+    height, width = mask.shape[:2]
+    for x0, y0, x1, y1 in params.ignore_regions:
+        mask[
+            max(0, min(y0, y1)) : min(height, max(y0, y1)),
+            max(0, min(x0, x1)) : min(width, max(x0, x1)),
+        ] = 0
+    return mask
+
+
 def surface_mask(
-    image: np.ndarray,
-    *,
-    v_abs: int | None = None,
-    ignore: tuple[tuple[int, int, int, int], ...] = (),
+    image: np.ndarray, params: SurfaceParams | None = None
 ) -> np.ndarray | None:
     """Bright, unsaturated pixels — the tabletop, not the floor or a wall.
 
-    The brightness threshold is measured against this frame's own floor, so
-    it survives a change of exposure or of floor shade; only the *contrast*
-    between tabletop and floor has to hold.
-
-    ``v_abs`` replaces that rule with an absolute ``V >= v_abs`` — for a
-    scene where the floor sample is not floor (the Munich workbench sits on
-    a dark cabinet, so ``floor + 45`` admits the white partitions behind the
-    table and fuses them with it; ``V >= 145`` separates them, measured on
-    seven real frames, ``configs/rig/perception_munich.yaml``).
+    Two rules, selected by ``params`` (see ``SurfaceParams``): the sim's
+    floor-relative brightness, and an absolute band for a scene with its
+    own measured exposure. The relative rule is tried first and only
+    accepted when it claims a plausible share of the frame, so the absolute
+    band is also the fallback for "the lower frame *is* the table".
     """
     if image is None or image.ndim != 3 or image.shape[2] < 3:
         return None
+    params = params or SurfaceParams()
     rgb = np.ascontiguousarray(image[:, :, :3], dtype=np.uint8)
     hsv = cv2.cvtColor(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), cv2.COLOR_BGR2HSV)
     saturation, value = hsv[:, :, 1], hsv[:, :, 2]
-    if v_abs is not None:
-        mask = ((value >= int(v_abs)) & (saturation <= _SURFACE_S_MAX)).astype(np.uint8) * 255
-        # ``ignore`` rectangles: the robot's own shell at the lower image
-        # corners is as bright as the tabletop and bridges into its blob.
-        for x0, y0, x1, y1 in ignore:
-            mask[y0:y1, x0:x1] = 0
-        return mask
-    floor_v = float(np.median(value[int(value.shape[0] * _FLOOR_SAMPLE_FRAC) :, :]))
-    bright = value >= floor_v + _SURFACE_V_ABOVE_FLOOR
-    relative = (bright & (saturation <= _SURFACE_S_MAX)).astype(np.uint8) * 255
-    if float(np.count_nonzero(relative)) >= _SURFACE_MIN_AREA_FRAC * relative.size:
-        return relative
-    absolute = (
-        (value >= _SURFACE_V_ABS) & (saturation <= _SURFACE_S_MAX)
-    ).astype(np.uint8) * 255
-    if float(np.count_nonzero(absolute)) >= _SURFACE_ABS_MIN_FRAC * absolute.size:
+    unsaturated = saturation <= params.s_max
+    relative = None
+    if params.use_floor_relative:
+        floor_v = float(
+            np.median(value[int(value.shape[0] * params.floor_sample_frac) :, :])
+        )
+        bright = value >= floor_v + params.v_above_floor
+        relative = _apply_ignore(
+            (bright & unsaturated).astype(np.uint8) * 255, params
+        )
+        if float(np.count_nonzero(relative)) >= params.min_area_frac * relative.size:
+            return relative
+    absolute = _apply_ignore(
+        (
+            (value >= params.v_min) & (value <= params.v_max) & unsaturated
+        ).astype(np.uint8) * 255,
+        params,
+    )
+    if float(np.count_nonzero(absolute)) >= params.abs_min_frac * absolute.size:
         return absolute
-    return relative
+    return relative if relative is not None else absolute
 
 
 def largest_component(mask: np.ndarray) -> np.ndarray:
@@ -451,22 +467,18 @@ def detect(
     image: np.ndarray,
     *,
     use_surface_prior: bool = True,
-    surface_v_abs: int | None = None,
-    surface_ignore: tuple[tuple[int, int, int, int], ...] = (),
+    surface_params: SurfaceParams | None = None,
 ) -> Features:
     """Head RGB (or gray) → segments plus tabletop and foot corners.
 
-    ``surface_v_abs`` / ``surface_ignore`` go to :func:`surface_mask` (site profile).
+    ``surface_params`` selects the scene's tabletop thresholds; ``None`` is
+    the sim default (``SurfaceParams()``).
     """
     if image is None or image.ndim < 2:
         return Features()
     height, width = image.shape[:2]
     segments = line_segments(image)
-    surface = (
-        surface_mask(image, v_abs=surface_v_abs, ignore=surface_ignore)
-        if use_surface_prior
-        else None
-    )
+    surface = surface_mask(image, surface_params) if use_surface_prior else None
     if surface is not None:
         surface = largest_component(surface)
     outline: tuple[Segment, ...] = ()
@@ -485,17 +497,19 @@ def undistort(
     rgb: np.ndarray,
     intrinsics: tuple[float, float, float, float] | None,
     dist: tuple[float, ...] | None,
-    *,
     new_intrinsics: tuple[float, float, float, float] | None = None,
 ) -> np.ndarray:
-    """Undo lens distortion when CameraInfo publishes a non-zero ``D``.
+    """Undo lens distortion when CameraInfo (or a site camera profile)
+    publishes a non-zero ``D``.
 
-    Sim cameras are ideal pinhole (``D = 0``); this is a no-op there. By
-    default the same ``K`` is the output camera matrix, so projection stays
-    in the undistorted pixel frame. ``new_intrinsics`` (e.g. a scaled focal
-    length, ``profile.CameraModel.k_out``) keeps the periphery of a barrel-
-    distorted frame inside the image; every projection afterwards must use
-    that matrix.
+    Sim cameras are ideal pinhole (``D = 0``); this is a no-op there. When
+    ``new_intrinsics`` is omitted, the same ``K`` is used as the new camera
+    matrix so projection stays in the undistorted pixel frame. Pass a
+    scaled-down ``new_intrinsics`` (smaller fx/fy, same cx/cy) for a
+    strongly barrel-distorted real lens: undistorting at the original focal
+    length pushes the periphery (e.g. the near table corners at a rig's
+    parked pose) outside the frame; every projection downstream of the
+    undistorted image must then use ``new_intrinsics``, not ``intrinsics``.
     """
     if rgb is None or intrinsics is None or not dist:
         return rgb
@@ -508,10 +522,10 @@ def undistort(
     k_mat = np.array(
         ((fx, 0.0, cx), (0.0, fy, cy), (0.0, 0.0, 1.0)), dtype=np.float64
     )
-    if new_intrinsics is None:
-        return cv2.undistort(rgb, k_mat, coeffs)
-    nfx, nfy, ncx, ncy = (float(v) for v in new_intrinsics)
-    new_k = np.array(
-        ((nfx, 0.0, ncx), (0.0, nfy, ncy), (0.0, 0.0, 1.0)), dtype=np.float64
-    )
-    return cv2.undistort(rgb, k_mat, coeffs, None, new_k)
+    new_k_mat = k_mat
+    if new_intrinsics is not None:
+        nfx, nfy, ncx, ncy = (float(v) for v in new_intrinsics)
+        new_k_mat = np.array(
+            ((nfx, 0.0, ncx), (0.0, nfy, ncy), (0.0, 0.0, 1.0)), dtype=np.float64
+        )
+    return cv2.undistort(rgb, k_mat, coeffs, newCameraMatrix=new_k_mat)

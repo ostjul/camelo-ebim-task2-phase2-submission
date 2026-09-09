@@ -358,12 +358,25 @@ def add_policy_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--approach-profile",
+        # Older name, kept working: both PRs shipped this flag under a
+        # different spelling and the runbooks quote both.
+        "--approach-perception-profile",
+        dest="approach_profile",
         default=None,
         metavar="YAML",
-        help="perception approach only: site profile — camera model used when "
-        "no CameraInfo is published (rig ZED-M: self-calibrated k1, scaled "
-        "output matrix) and the tabletop mask threshold. "
-        "configs/rig/perception_munich.yaml for the Munich rig.",
+        help="perception approach only: path to a scene profile "
+        "(configs/rig/*.yaml) carrying that scene's camera model (fx, fy, "
+        "cx, cy, dist, undistort_scale), its tabletop segmentation "
+        "thresholds, and — for a real rig — the `rig:` drive block, the "
+        "table landmark and the goal/start poses in its frame. Default is "
+        "the SIM profile (identical to configs/rig/perception_sim.yaml): "
+        "live CameraInfo plus the floor-relative brightness rule. Pass "
+        "configs/rig/perception_munich.yaml on the Munich rig, whose "
+        "/head_camera/.../rect/image publishes no camera_info and is NOT "
+        "rectified despite the name, and whose exposure the sim's "
+        "floor-relative rule reads as an empty mask. Live CameraInfo always "
+        "wins over a profile's camera when present. Required with "
+        "--world real --approach perception",
     )
     parser.add_argument(
         "--approach-timeout",
@@ -371,6 +384,34 @@ def add_policy_args(parser: argparse.ArgumentParser) -> None:
         default=130.0,
         help="max sim seconds for spine settle + navigate + place_arms "
         "(default: 130.0)",
+    )
+    parser.add_argument(
+        "--approach-skip-spine",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="perception approach only, ON by default: start the FSM "
+        "directly at 'navigate', bypassing the 'spine' stage entirely (0 "
+        "spine_ticks) rather than waiting on a gate. Most real bags/stacks "
+        "carry no /spine/joint_states at all, so waiting on it just burns "
+        "real ticks before navigate/localize ever runs. Pass "
+        "--no-approach-skip-spine to actually wait for the spine to settle "
+        "(e.g. a capture that does have spine telemetry and the caller "
+        "wants it honoured)",
+    )
+    parser.add_argument(
+        "--approach-spine-assume-m",
+        type=float,
+        default=None,
+        help="perception approach only: assumed spine height (metres) used "
+        "whenever no real /spine/joint_states reading exists (NaN, or the "
+        "finite 0.0 contracts.py's resolve_joint(...) defaults a genuinely "
+        "absent joint to — 0.0 m is not physically plausible for this "
+        "joint, SOP sits near 0.45-0.55 m), instead of C.SPINE_SOP_M (the "
+        "SIM standard-operating height, 0.50 m — not necessarily what a "
+        "given real capture was actually at). This still reads a live "
+        "measurement every tick when one exists; it only changes the "
+        "assumption used in its absence. A profile's own `spine_m:` wins "
+        "over this",
     )
     parser.add_argument(
         "--approach-only",
@@ -947,9 +988,14 @@ def approach_start_xy_yaw_from_args(args):
 
 
 def make_approach_from_args(args):
-    """None when --skip-approach; on --world real only the perception approach
-    with a rig profile drives the base (the pose-based controller needs the
-    sim's map frame). Else the Task 2 desk-zone controller."""
+    """None when --skip-approach, or on --world real with the default pose
+    approach (the pose-based controller needs the sim's map frame and is
+    unvalidated for commanding the real base). --approach perception is
+    allowed on real: it is opt-in, and it must carry a profile with a `rig:`
+    section, which is what says how this base is driven. Callers running it
+    off-rig against a replayed bag are explicitly not expecting the base to
+    move — PerceptionApproachController's commands go nowhere without a live
+    companion listening. Else the Task 2 desk-zone controller."""
     if getattr(args, "skip_approach", False):
         return None
     dump_dir = getattr(args, "approach_dump", None)
@@ -970,7 +1016,10 @@ def make_approach_from_args(args):
     if mode == "perception":
         from camelo.control.approach_perception_based import PerceptionApproachController
 
-        vision_hz = float(getattr(args, "approach_vision_hz", 0.0) or 0.0)
+        kwargs = {}
+        spine_assume = getattr(args, "approach_spine_assume_m", None)
+        if spine_assume is not None:
+            kwargs["spine_assume_m"] = spine_assume
         profile = None
         profile_path = getattr(args, "approach_profile", None)
         if profile_path:
@@ -979,11 +1028,18 @@ def make_approach_from_args(args):
             profile = load_profile(profile_path)
             if real and profile.rig is None:
                 raise SystemExit(f"{profile_path}: no `rig:` section — not a real-robot profile")
+        # skip_spine drops "spine" from the stage LIST (see build_stages) —
+        # mutating .stage after construction does not survive run_approach's
+        # own approach.reset() call at the top of the loop, which resets to
+        # self.stages[0].
+        kwargs["skip_spine"] = bool(getattr(args, "approach_skip_spine", True))
+        vision_hz = float(getattr(args, "approach_vision_hz", 0.0) or 0.0)
         return PerceptionApproachController(
             dump_dir=dump_dir,
             start_xy_yaw=approach_start_xy_yaw_from_args(args),
             vision_min_period_s=(1.0 / vision_hz) if vision_hz > 0.0 else 0.0,
             profile=profile,
+            **kwargs,
         )
     if dump_dir:
         log.warning("--approach-dump is ignored unless --approach perception")

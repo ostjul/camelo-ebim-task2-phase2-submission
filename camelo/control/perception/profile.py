@@ -1,30 +1,44 @@
-"""Site-specific perception settings: camera model + detector thresholds.
+"""Scene-specific perception settings: camera model, detector thresholds,
+and — for a real rig — how the base is driven and where the landmark is.
 
 The sim needs none of this: Isaac publishes ``camera_info`` (ideal pinhole,
-``D = 0``) and the tabletop/floor contrast the detector was tuned on. The
-Munich rig has no ``camera_info``, an unrectified ZED-M stream with visible
-barrel distortion, and a white workbench in front of white partitions.
-``configs/rig/perception_munich.yaml`` carries the measured answers; this
-module loads them. numpy-only.
+``D = 0``) and the tabletop/floor contrast the detector was tuned on. A real
+scene can differ on both counts — the Munich rig publishes no ``camera_info``
+at all (and its ``.../rect/image`` topic is NOT rectified despite the name),
+its ZED-M has visible barrel distortion, and its white workbench sits in
+front of white curtains under an exposure where the sim's floor-relative
+brightness rule collapses (see ``configs/rig/perception_munich.yaml``). It
+also has no pedal quantizer, no wall map and no table at the sim's place, so
+a rig profile additionally carries a ``rig:`` drive block, a ``table:``
+landmark and the goal/start poses in that landmark's frame.
+
+The defaults here ARE the sim values, so an unconfigured run behaves exactly
+as before; ``configs/rig/perception_sim.yaml`` spells the same numbers out
+for the record (``tests/test_perception_profile.py`` fails if the two ever
+drift apart). numpy-only — no cv2, so this module stays importable wherever
+``camelo.control`` is.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+
+import yaml
 
 from camelo import contracts as C
 
 
 @dataclass(frozen=True)
 class CameraModel:
-    """Pinhole ``(fx, fy, cx, cy)`` + OpenCV distortion ``dist``.
+    """Pinhole ``(fx, fy, cx, cy)`` + OpenCV radial/tangential distortion.
 
-    ``undistort_scale`` scales the *output* focal length when undistorting
-    (``features.undistort(new_intrinsics=…)``): < 1 keeps the periphery of a
-    barrel-distorted frame inside the image instead of cropping it. Every
-    projection after undistortion must use ``k_out``, not ``k``.
+    ``undistort_scale`` scales the *output* focal length used when
+    undistorting (``features.undistort(new_intrinsics=k_out)``): < 1.0 keeps
+    the periphery of a barrel-distorted frame inside the image instead of
+    cropping it at the original focal length. Every projection downstream of
+    the undistorted image must then use ``k_out``, not ``k``.
     """
 
     fx: float
@@ -49,6 +63,45 @@ class CameraModel:
 
 
 @dataclass(frozen=True)
+class SurfaceParams:
+    """What counts as "tabletop" for ``features.surface_mask``.
+
+    Two rules, in order:
+
+    * **floor-relative** — ``V >= median(bottom floor_sample_frac of the
+      frame) + v_above_floor``. Survives a change of exposure or floor
+      shade, and is the sim default. It assumes the bottom of the frame is
+      *floor*: park close enough that the tabletop fills it and the sample
+      is the table itself, the threshold climbs above the table, and the
+      mask goes empty (measured on the Munich bag: floor sample V 139-148,
+      threshold 184-193, tabletop only 144-168 → nothing survives).
+    * **absolute** — ``v_min <= V <= v_max``. What a scene with its own
+      measured exposure should use; ``v_max`` rejects blown-out whites
+      (curtains) that a lower bound alone keeps.
+
+    ``use_floor_relative=False`` skips straight to the absolute rule.
+    ``ignore_regions`` are ``[x0, y0, x1, y1]`` boxes zeroed *before*
+    connected components, for fixed foreground the mask must never bridge
+    through (e.g. the robot's own white shell at the frame's lower corners).
+    """
+
+    #: floor-relative rule
+    use_floor_relative: bool = True
+    v_above_floor: int = 45
+    floor_sample_frac: float = 0.55
+    #: minimum share of the frame for the floor-relative mask to be accepted
+    min_area_frac: float = 0.02
+    #: absolute rule
+    v_min: int = 170
+    v_max: int = 255
+    #: minimum share of the frame for the absolute mask to be accepted
+    abs_min_frac: float = 0.15
+    #: both rules
+    s_max: int = 60
+    ignore_regions: tuple[tuple[int, int, int, int], ...] = ()
+
+
+@dataclass(frozen=True)
 class TableSpec:
     """The landmark in the profile's world frame (metres, radians)."""
 
@@ -61,7 +114,10 @@ class TableSpec:
         from camelo.control.perception.table import TableModel
 
         return TableModel(
-            origin_xy=self.origin_xy, size_xy=self.size_xy, height_m=self.height_m, yaw=self.yaw
+            origin_xy=self.origin_xy,
+            size_xy=self.size_xy,
+            height_m=self.height_m,
+            yaw=self.yaw,
         )
 
 
@@ -89,131 +145,169 @@ class RigDrive:
 
 @dataclass(frozen=True)
 class PerceptionProfile:
+    """Everything scene-specific the perception approach reads."""
+
     camera: CameraModel | None = None
-    # Real-base drive settings; None = the sim pedal path.
+    surface: SurfaceParams = field(default_factory=SurfaceParams)
+    #: Real-base drive settings; ``None`` = the sim pedal path.
     rig: RigDrive | None = None
-    # The landmark. None with ``rig`` set = vision off: the fused pose is
-    # the operator's start seed + odometry (the dead-reckoning MVP).
+    #: The landmark. ``None`` with ``rig`` set = vision off: the fused pose
+    #: is the operator's start seed + odometry (the dead-reckoning MVP).
     table: TableSpec | None = None
-    # Goal base pose in the profile's world frame; required with ``rig``.
+    #: Goal base pose in the profile's world frame; required with ``rig``.
     goal_xy_yaw: tuple[float, float, float] | None = None
-    # Default filter seed (``--approach-start-xy-yaw`` overrides).
+    #: Default filter seed (``--approach-start-xy-yaw`` overrides).
     start_xy_yaw: tuple[float, float, float] | None = None
-    # Fixed head-camera spine height when the state carries none (rig).
+    #: Fixed head-camera spine height when the state carries none (rig).
     spine_m: float | None = None
-    # "task2" = the sim cubicle walls; "none" = no wall map (rig).
+    #: "task2" = the sim cubicle walls; "none" = no wall map (rig).
     walls: str = "task2"
-    # Absolute HSV-V threshold for the tabletop mask (None = the sim's
-    # floor-relative rule, see ``features.surface_mask``).
-    surface_v_abs: int | None = None
-    # Pixel rectangles ``(x0, y0, x1, y1)`` in the (undistorted) frame that
-    # can never be tabletop — the robot's own shell at the lower corners
-    # bridges into the mask otherwise. Zeroed before the instance is taken.
-    ignore_regions: tuple[tuple[int, int, int, int], ...] = ()
-    source: str = field(default="", compare=False)
+    #: where this came from, for log lines and error messages. Not part of
+    #: the value: two profiles that say the same thing ARE the same profile,
+    #: which is what lets ``load_profile(<empty yaml>) == PerceptionProfile()``.
+    source: str | None = field(default=None, compare=False)
 
 
-def _camera_from_mapping(m: dict) -> CameraModel:
+#: The unconfigured default: exactly the sim constants.
+SIM_PROFILE = PerceptionProfile(source="<sim defaults>")
+
+
+def _camera_from(doc: dict, path: Path) -> CameraModel | None:
+    cam = doc.get("camera")
+    if cam is None:
+        return None
+    if not isinstance(cam, dict):
+        raise ValueError(f"{path}: 'camera:' must be a mapping")
     try:
-        cam = CameraModel(
-            fx=float(m["fx"]),
-            fy=float(m["fy"]),
-            cx=float(m["cx"]),
-            cy=float(m["cy"]),
-            dist=tuple(float(v) for v in m.get("dist", ())),
-            undistort_scale=float(m.get("undistort_scale", 1.0)),
+        model = CameraModel(
+            fx=float(cam["fx"]),
+            fy=float(cam["fy"]),
+            cx=float(cam["cx"]),
+            cy=float(cam["cy"]),
+            dist=tuple(float(v) for v in cam.get("dist", ())),
+            undistort_scale=float(cam.get("undistort_scale", 1.0)),
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError(
-            f"camera model needs fx, fy, cx, cy (+ dist, undistort_scale): {exc}"
+            f"{path}: camera needs fx, fy, cx, cy (+ dist, undistort_scale): {exc}"
         ) from exc
-    if not all(math.isfinite(v) and v > 0 for v in (cam.fx, cam.fy, cam.undistort_scale)):
-        raise ValueError(f"camera fx/fy/undistort_scale must be finite and > 0: {cam}")
-    return cam
+    if not all(math.isfinite(v) and v > 0 for v in (model.fx, model.fy, model.undistort_scale)):
+        raise ValueError(f"{path}: camera fx/fy/undistort_scale must be finite and > 0")
+    return model
+
+
+def _surface_from(doc: dict, path: Path) -> SurfaceParams:
+    src = doc.get("surface")
+    if src is None:
+        return SurfaceParams()
+    if not isinstance(src, dict):
+        raise ValueError(f"{path}: 'surface:' must be a mapping")
+    known = set(SurfaceParams.__dataclass_fields__)
+    unknown = set(src) - known
+    if unknown:
+        raise ValueError(f"{path}: unknown surface keys {sorted(unknown)}; known: {sorted(known)}")
+    regions = src.get("ignore_regions", ())
+    boxes = []
+    for box in regions or ():
+        if len(box) != 4:
+            raise ValueError(f"{path}: ignore_regions entries are [x0, y0, x1, y1], got {box!r}")
+        x0, y0, x1, y1 = (int(v) for v in box)
+        if not (x0 < x1 and y0 < y1):
+            raise ValueError(f"{path}: ignore_regions box is empty or inverted: {box!r}")
+        boxes.append((x0, y0, x1, y1))
+    params = replace(
+        SurfaceParams(),
+        **{k: v for k, v in src.items() if k != "ignore_regions"},
+        ignore_regions=tuple(boxes),
+    )
+    if not 0 <= params.v_min <= params.v_max <= 255:
+        raise ValueError(
+            f"{path}: need 0 <= v_min <= v_max <= 255, got {params.v_min}..{params.v_max}"
+        )
+    if not 0.0 < params.floor_sample_frac < 1.0:
+        raise ValueError(f"{path}: floor_sample_frac must be in (0, 1)")
+    return params
+
+
+def _rig_from(doc: dict, path: Path) -> RigDrive | None:
+    src = doc.get("rig")
+    if src is None:
+        return None
+    if not isinstance(src, dict):
+        raise ValueError(f"{path}: 'rig:' must be a mapping")
+    flags = ("base_only", "continuous_twist")
+    try:
+        rig = RigDrive(
+            **{k: (bool(v) if k in flags else float(v)) for k, v in src.items()}
+        )
+    except TypeError as exc:
+        raise ValueError(f"{path}: unknown rig key: {exc}") from exc
+    if not 0 < rig.max_linear_mps <= C.REAL_BASE_MAX_LINEAR_MPS + 1e-9:
+        raise ValueError(f"{path}: rig.max_linear_mps must be in (0, {C.REAL_BASE_MAX_LINEAR_MPS}]")
+    if not 0 < rig.max_angular_radps <= C.REAL_BASE_MAX_ANGULAR_RADPS + 1e-9:
+        raise ValueError(
+            f"{path}: rig.max_angular_radps must be in (0, {C.REAL_BASE_MAX_ANGULAR_RADPS}]"
+        )
+    return rig
+
+
+def _table_from(doc: dict, path: Path) -> TableSpec | None:
+    src = doc.get("table")
+    if src is None:
+        return None
+    try:
+        table = TableSpec(
+            origin_xy=(float(src["origin_xy"][0]), float(src["origin_xy"][1])),
+            size_xy=(float(src["size_xy"][0]), float(src["size_xy"][1])),
+            height_m=float(src["height_m"]),
+            yaw=float(src.get("yaw", 0.0)),
+        )
+    except (KeyError, TypeError, ValueError, IndexError) as exc:
+        raise ValueError(
+            f"{path}: table needs origin_xy, size_xy, height_m (+ yaw): {exc}"
+        ) from exc
+    if not all(v > 0 for v in (*table.size_xy, table.height_m)):
+        raise ValueError(f"{path}: table size/height must be > 0")
+    return table
+
+
+def _pose_from(doc: dict, path: Path, key: str) -> tuple[float, float, float] | None:
+    value = doc.get(key)
+    if value is None:
+        return None
+    try:
+        x, y, yaw = (float(c) for c in value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{path}: {key} must be [x, y, yaw] (metres, radians)") from exc
+    if not all(math.isfinite(c) for c in (x, y, yaw)):
+        raise ValueError(f"{path}: {key} must be finite")
+    return (x, y, yaw)
 
 
 def load_profile(path: str | Path) -> PerceptionProfile:
-    """Read a YAML profile (``camera:`` mapping, ``surface_v_abs:`` int)."""
-    import yaml  # core dependency (contracts.verify_topics reads YAML too)
+    """Parse a ``configs/rig/*.yaml`` scene profile.
 
-    p = Path(path).expanduser()
-    data = yaml.safe_load(p.read_text()) or {}
-    if not isinstance(data, dict):
-        raise ValueError(f"{p}: expected a mapping at the top level")
-    camera = _camera_from_mapping(data["camera"]) if data.get("camera") else None
-    v_abs = data.get("surface_v_abs")
-    if v_abs is not None:
-        v_abs = int(v_abs)
-        if not 0 < v_abs < 256:
-            raise ValueError(f"{p}: surface_v_abs must be in 1..255, got {v_abs}")
-    rig = None
-    if data.get("rig") is not None:
-        m = data["rig"] if isinstance(data["rig"], dict) else {}
-        try:
-            rig = RigDrive(**{k: (bool(v) if k in ("base_only", "continuous_twist") else float(v))
-                              for k, v in m.items()})
-        except TypeError as exc:
-            raise ValueError(f"{p}: unknown rig key: {exc}") from exc
-        if not (0 < rig.max_linear_mps <= C.REAL_BASE_MAX_LINEAR_MPS + 1e-9):
-            raise ValueError(
-                f"{p}: rig.max_linear_mps must be in (0, {C.REAL_BASE_MAX_LINEAR_MPS}]"
-            )
-        if not (0 < rig.max_angular_radps <= C.REAL_BASE_MAX_ANGULAR_RADPS + 1e-9):
-            raise ValueError(
-                f"{p}: rig.max_angular_radps must be in (0, {C.REAL_BASE_MAX_ANGULAR_RADPS}]"
-            )
-    table = None
-    if data.get("table") is not None:
-        t = data["table"]
-        try:
-            table = TableSpec(
-                origin_xy=(float(t["origin_xy"][0]), float(t["origin_xy"][1])),
-                size_xy=(float(t["size_xy"][0]), float(t["size_xy"][1])),
-                height_m=float(t["height_m"]),
-                yaw=float(t.get("yaw", 0.0)),
-            )
-        except (KeyError, TypeError, ValueError, IndexError) as exc:
-            raise ValueError(
-                f"{p}: table needs origin_xy, size_xy, height_m (+ yaw): {exc}"
-            ) from exc
-        if not all(v > 0 for v in (*table.size_xy, table.height_m)):
-            raise ValueError(f"{p}: table size/height must be > 0")
-
-    def _pose(key):
-        v = data.get(key)
-        if v is None:
-            return None
-        try:
-            x, y, yaw = (float(c) for c in v)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{p}: {key} must be [x, y, yaw] (metres, radians)") from exc
-        if not all(math.isfinite(c) for c in (x, y, yaw)):
-            raise ValueError(f"{p}: {key} must be finite")
-        return (x, y, yaw)
-
-    walls = str(data.get("walls", "task2"))
+    Raises rather than silently falling back to the sim defaults: a profile
+    that loaded wrong is worse than one that visibly refused to load — the
+    run would look configured while using someone else's scene.
+    """
+    path = Path(path).expanduser()
+    doc = yaml.safe_load(path.read_text()) or {}
+    if not isinstance(doc, dict):
+        raise ValueError(f"{path}: expected a top-level mapping")
+    walls = str(doc.get("walls", "task2"))
     if walls not in ("task2", "none"):
-        raise ValueError(f"{p}: walls must be 'task2' or 'none', got {walls!r}")
-    spine_m = data.get("spine_m")
+        raise ValueError(f"{path}: walls must be 'task2' or 'none', got {walls!r}")
+    spine_m = doc.get("spine_m")
     spine_m = None if spine_m is None else float(spine_m)
-    ignore = []
-    for rect in data.get("ignore_regions") or ():
-        try:
-            x0, y0, x1, y1 = (int(v) for v in rect)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{p}: ignore_regions entries are [x0, y0, x1, y1]: {rect!r}") from exc
-        if not (0 <= x0 < x1 and 0 <= y0 < y1):
-            raise ValueError(f"{p}: ignore_regions rectangle is empty or negative: {rect!r}")
-        ignore.append((x0, y0, x1, y1))
     return PerceptionProfile(
-        camera=camera,
-        rig=rig,
-        table=table,
-        goal_xy_yaw=_pose("goal_xy_yaw"),
-        start_xy_yaw=_pose("start_xy_yaw"),
+        camera=_camera_from(doc, path),
+        surface=_surface_from(doc, path),
+        rig=_rig_from(doc, path),
+        table=_table_from(doc, path),
+        goal_xy_yaw=_pose_from(doc, path, "goal_xy_yaw"),
+        start_xy_yaw=_pose_from(doc, path, "start_xy_yaw"),
         spine_m=spine_m,
         walls=walls,
-        surface_v_abs=v_abs,
-        ignore_regions=tuple(ignore),
-        source=str(p),
+        source=str(path),
     )

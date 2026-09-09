@@ -357,6 +357,12 @@ if __name__ == "__main__":
     code = 1
     try:
         code = main()
+    except SystemExit as exc:  # --help / argparse exit: not a crash, no traceback
+        if exc.code is None or isinstance(exc.code, int):
+            code = exc.code if isinstance(exc.code, int) else 0
+        else:
+            print(exc.code, file=sys.stderr)
+            code = 1
     except BaseException:
         traceback.print_exc()
     finally:

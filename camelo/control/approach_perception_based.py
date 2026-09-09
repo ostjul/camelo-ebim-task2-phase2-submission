@@ -50,7 +50,11 @@ from camelo.control.perception.geometry import (
 )
 from camelo.control.perception.localize import EgoEstimate, TableLocalizer
 from camelo.control.perception.planner import PathSample, SplinePlanner
-from camelo.control.perception.profile import PerceptionProfile
+from camelo.control.perception.profile import (
+    SIM_PROFILE,
+    PerceptionProfile,
+    load_profile,
+)
 from camelo.control.perception.table import TableModel
 from camelo.control.perception.walls import ROOM_WALLS
 
@@ -285,22 +289,36 @@ class PerceptionApproachController(ApproachController):
         localizer: TableLocalizer | None = None,
         planner: SplinePlanner | None = None,
         quantizer: BaseQuantizer | None = None,
+        spine_assume_m: float | None = None,
         vision_min_period_s: float = 0.0,
-        profile: PerceptionProfile | None = None,
+        profile: PerceptionProfile | str | Path | None = None,
         **kwargs,
     ):
         # Parent __init__ calls self.reset() before returning; everything
         # _reset_perception touches must exist before that call.
-        self.profile = profile or PerceptionProfile()
+        # Scene profile: stand-in K/D for a camera with no live CameraInfo
+        # (the Munich rig publishes none), that scene's tabletop thresholds,
+        # and — on a rig — the drive limits, the landmark and the goal. A
+        # path loads configs/rig/*.yaml; None is the sim default, i.e. live
+        # CameraInfo (or the generic sim-FOV fallback), the floor-relative
+        # surface rule, the frozen Task 2 table and the pedal path.
+        if profile is None:
+            self.profile = SIM_PROFILE
+        elif isinstance(profile, PerceptionProfile):
+            self.profile = profile
+        else:
+            self.profile = load_profile(profile)
         rig = self.profile.rig
         self.rig = rig
         self.spine_hold_ticks = max(1, int(spine_hold_ticks))
+        # Assumed height when no /spine/joint_states exists at all (common
+        # off-rig): C.SPINE_SOP_M is the SIM's standard-operating height,
+        # not necessarily what a given real capture was actually at. A
+        # profile's own ``spine_m`` (the rig's fixed height) wins over it.
+        self._spine_assume_m = C.SPINE_SOP_M if spine_assume_m is None else float(spine_assume_m)
         # Vision cap for fast cameras (rig ZED ~20 Hz): at most one head
         # frame per period is detected/solved; 0 = every new frame.
         self.vision_min_period_s = max(0.0, float(vision_min_period_s))
-        # Site profile: camera model when there is no CameraInfo (live
-        # CameraInfo wins), detector threshold, and — on the rig — the drive
-        # limits, the landmark and the goal.
         seed = start_xy_yaw if start_xy_yaw is not None else self.profile.start_xy_yaw
         self.start_xy_yaw = (
             tuple(float(v) for v in seed) if seed is not None else C.TASK2_SPAWN_XY_YAW
@@ -380,7 +398,7 @@ class PerceptionApproachController(ApproachController):
             "fused": [],
         }
         self._features = Features()
-        self._spine_m = C.SPINE_SOP_M
+        self._spine_m = self._spine_assume_m
         self._last_state: np.ndarray | None = None
         self._odom_at_head: tuple[float, float, float] | None = None
         self._head_k: tuple[float, float, float, float] | None = None
@@ -462,11 +480,7 @@ class PerceptionApproachController(ApproachController):
         """Features → gated absolute ego estimate, or ``None``."""
         if not self.vision_enabled:
             return None
-        self._features = detect(
-            head,
-            surface_v_abs=self.profile.surface_v_abs,
-            surface_ignore=self.profile.ignore_regions,
-        )
+        self._features = detect(head, surface_params=self.profile.surface)
         height, width = head.shape[:2]
         return self.localizer.solve(
             self._features,
@@ -497,7 +511,15 @@ class PerceptionApproachController(ApproachController):
         return measurement if agrees else None
 
     def _k(self, width: int, height: int) -> tuple[float, float, float, float]:
-        """Intrinsics of the frame the pipeline sees (post-undistortion)."""
+        """Intrinsics of the frame the pipeline sees (post-undistortion).
+
+        Everything downstream of the delivered ``head`` image — localize,
+        gate, dump/viz — must agree on which K it was drawn/projected in.
+        ``_k_active`` is set in ``step()`` to whatever K undistort() just
+        used as its new camera matrix (``k_out`` when a distorted profile
+        is active, else the same K undistort was called with); falling back
+        to ``_k_in`` covers every tick before the first image arrives.
+        """
         if self._k_active is not None:
             return self._k_active
         return self._k_in(width, height)
@@ -854,6 +876,9 @@ class PerceptionApproachController(ApproachController):
         self._odom_at_head = odom_at_head
         self._head_k = head_k
         cam = self.profile.camera
+        # Live CameraInfo distortion wins when it exists; otherwise fall
+        # back to the camera profile's self-calibrated D (e.g. the Munich
+        # rig, which publishes no camera_info at all).
         if head_d:
             self._head_d = tuple(head_d)
         elif head_k is None and cam is not None:
@@ -861,11 +886,20 @@ class PerceptionApproachController(ApproachController):
         else:
             self._head_d = ()
         spine = float(state[C.S_SPINE])
+        # contracts.py's resolve_joint(measured, SPINE_JOINT, 0.0) returns a
+        # FINITE 0.0 default when the joint is simply absent (no
+        # /spine/joint_states at all, e.g. this bag) — math.isfinite alone
+        # cannot tell that apart from a genuine reading, and 0.0 is not a
+        # physically plausible spine height (SOP range sits near 0.45-0.55
+        # m), so treat it as "no measurement" too.
+        spine_measured = math.isfinite(spine) and spine > 0.0
         if self.profile.spine_m is not None:
-            self._spine_m = float(self.profile.spine_m)  # rig: fixed, state has none
+            # Rig: the spine is at a fixed, measured height and the state
+            # carries none at all — the profile is the only source.
+            self._spine_m = float(self.profile.spine_m)
         else:
-            self._spine_m = spine if math.isfinite(spine) else C.SPINE_SOP_M
-        self.stats["final_spine_m"] = spine if math.isfinite(spine) else None
+            self._spine_m = spine if spine_measured else self._spine_assume_m
+        self.stats["final_spine_m"] = spine if spine_measured else None
         head = None if images is None else images.get("head")
         if head is not None:
             head = self._fresh_head(head, head_t_sim)
@@ -876,6 +910,9 @@ class PerceptionApproachController(ApproachController):
             if head_k is None and cam is not None and self._head_d:
                 k_out = cam.k_out
             head = undistort(head, k_in, self._head_d, new_intrinsics=k_out)
+            # Everything downstream (localize, gate, dump/viz) must agree on
+            # which K the delivered image is actually in — _k() returns
+            # this until the next tick's undistort() call replaces it.
             self._k_active = k_out if self._head_d else None
 
         if self.stage == "spine":
@@ -923,11 +960,11 @@ class PerceptionApproachController(ApproachController):
         if head is None:
             self._est = self.filter.update(odom_xy_yaw=odom_now)
             return False
-        self._features = detect(
-            head,
-            surface_v_abs=self.profile.surface_v_abs,
-            surface_ignore=self.profile.ignore_regions,
-        )
+        if not self.vision_enabled:
+            # No landmark (rig without a measured table): odometry only.
+            self._est = self.filter.update(odom_xy_yaw=odom_now)
+            return False
+        self._features = detect(head, surface_params=self.profile.surface)
         height, width = head.shape[:2]
         intrinsics = self._k(width, height)
         estimate = self.localizer.align_edges(
