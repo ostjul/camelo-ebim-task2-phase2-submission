@@ -104,4 +104,4 @@ spine_m: 0.434             # corpus spine setpoint (R-69); read live (scripts/re
 # side (the pad row), +y towards the robot's parked side, yaw 0.
 table: null                # MEASURE: {origin_xy: [0.0, 0.0], size_xy: [L, W], height_m: H, yaw: 0.0}
 goal_xy_yaw: null          # MEASURE: parked T6 base_link pose [x, y, yaw]; facing the table from +y: yaw -1.5708
-start_xy_yaw: null         # optional default seed; --approach-start-xy-yaw overrides
+start_xy_yaw: [4.35, 2.6, -3.142]   # default seed for the real approach (rig, 2026-09-09); --approach-start-xy-yaw overrides

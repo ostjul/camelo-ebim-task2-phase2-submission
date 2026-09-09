@@ -11,7 +11,7 @@ approach** can drive the base to the table first, or the base is parked by hand.
 setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). Read [Status](#status) before running anything on hardware.
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `2124048`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `c55f3f9`).
 
 ## How it runs
 
@@ -157,9 +157,9 @@ Every request must answer `chunk=(21, 15)` with no reconnects, else the tunnel o
 
 **P — the rollout. Two options for the base; the arms are homed and the scene placed first (cheat sheet step 4).**
 
-*Option A, the perception approach drives the base* ([cheat sheet](docs/CHEATSHEET.md#rollout-p)): needs `start_base.bash` on the companion, the `table:` and `goal_xy_yaw:` measurements in `configs/rig/perception_munich.yaml`, and one `--approach-only` dry pass ([cheat sheet](docs/CHEATSHEET.md#optional-base-approach-p)). `<x,y,yaw>` is the rough start pose in the table frame. Never driven on this base yet.
+*Option A, the perception approach drives the base* ([cheat sheet](docs/CHEATSHEET.md#rollout-p)): needs `start_base.bash` on the companion, the `table:` and `goal_xy_yaw:` measurements in `configs/rig/perception_munich.yaml`, and one `--approach-only` dry pass ([cheat sheet](docs/CHEATSHEET.md#optional-base-approach-p)). The profile seeds the start pose `4.35, 2.6, -3.142`; `--approach-start-xy-yaw x,y,yaw` overrides it. Never driven on this base yet.
 ```bash
-R=ap00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --approach perception --approach-profile configs/rig/perception_munich.yaml --approach-start-xy-yaw <x,y,yaw> --approach-vision-hz 4 --approach-dump outputs/rig/approach_${R}_$TS --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
+R=ap00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --approach perception --approach-profile configs/rig/perception_munich.yaml --approach-vision-hz 4 --approach-dump outputs/rig/approach_${R}_$TS --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
 ```
 
 *Option B, the base positioned by hand* (how the `a05` reference was run): park in front of the table and align against the corpus frame with [`tools/rig_probes/overlay_latest.sh`](tools/rig_probes/overlay_latest.sh) or the live [`tools/rig_probes/live_overlay.py`](tools/rig_probes/live_overlay.py), then [`pad_centroid.sh`](tools/rig_probes/pad_centroid.sh) ([cheat sheet](docs/CHEATSHEET.md#arms-and-scene-apm)).

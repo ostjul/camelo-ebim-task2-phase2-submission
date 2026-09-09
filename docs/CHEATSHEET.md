@@ -2,7 +2,7 @@
 
 One block per step: **terminal → command → one sentence.** This is the
 terminal-by-terminal procedure behind the README's session flow, in the
-order a session runs it. Release `v0.1.0` (2026-09-09, build `2124048`), image
+order a session runs it. Release `v0.1.0` (2026-09-09, build `c55f3f9`), image
 `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0`.
 
 ## Terminal legend
@@ -167,15 +167,15 @@ navigation, `camelo/control/perception_based_navigation.md`).** Needs, once:
 [`site/companion/start_base.bash`](../site/companion/start_base.bash) if it is
 missing), the two measurements in `configs/rig/perception_munich.yaml`
 (`table:` and `goal_xy_yaw:`, see [Optional: base approach](#optional-base-approach-p)),
-and one dry pass with `--approach-only` from that section. Give the rough start
-pose `<x,y,yaw>` in the table frame; the approach runs before the arms activate
+and one dry pass with `--approach-only` from that section. The profile seeds the start pose `4.35, 2.6, -3.142` (add
+`--approach-start-xy-yaw x,y,yaw` to override it); the approach runs before the arms activate
 and does not count against `--seconds`. It has never driven this base yet.
 
 **P — rollout with the approach (right arm only, async inference,
 observation-time chunk base, offset splice, replan every 12 steps, gripper
 latch, 120 s).**
 ```bash
-R=ap00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --approach perception --approach-profile configs/rig/perception_munich.yaml --approach-start-xy-yaw <x,y,yaw> --approach-vision-hz 4 --approach-dump outputs/rig/approach_${R}_$TS --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
+R=ap00; TS=$(date +%H%M%S); python -u scripts/run_policy.py --world real --approach perception --approach-profile configs/rig/perception_munich.yaml --approach-vision-hz 4 --approach-dump outputs/rig/approach_${R}_$TS --backend remote --server ws://127.0.0.1:8767 --action-layout s27a15 --state-layout s27a15 --task "Pick up the thermal pad and place it on the target RAM board" --arms right --start-pose file:outputs/rig/t5/start_pose_s27a15_ep163.json --start-pose-tol 0.10 --activate-arms --wait-for-activation --keepalive-hz 10 --arm-command-frame robot --rate 20 --async-inference --chunk-time-base observation --chunk-splice offset --splice-ramp-ticks 20 --replan-steps 12 --max-delta 0.04 --max-image-age-s 0.5 --gripper-latch 0.3:20:0.9 --seconds 120 --chunk-dump outputs/rig/t6a_${R}_$TS.npz --joint-csv outputs/rig/t6a_${R}_$TS.csv > outputs/rig/t6a_${R}_$TS.log 2>&1; echo "exit=$?"
 ```
 The base navigates to `goal_xy_yaw`, settles, then the `a05` rollout below starts from the parked pose.
 
@@ -250,7 +250,7 @@ are `null` and must be measured by the operator before it will construct:
 ```bash
 python -u scripts/run_policy.py --world real --adapter dummy --approach-only \
   --approach perception --approach-profile configs/rig/perception_munich.yaml \
-  --approach-start-xy-yaw <x,y,yaw> --approach-vision-hz 4 \
+  --approach-vision-hz 4 \
   --approach-dump outputs/rig/approach_munich_$(date +%H%M%S)
 ```
 Parks the base and exits — no arm activation, no policy; drop `--approach-only` to continue into a rollout from the parked pose. This exact invocation has never run on the rig.
