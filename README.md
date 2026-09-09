@@ -11,7 +11,7 @@ approach** can drive the base to the table first, or the base is parked by hand.
 setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). Read [Status](#status) before running anything on hardware.
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `cac3717`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `db22206`).
 
 ## How it runs
 
@@ -241,10 +241,10 @@ Apache-2.0 (`LICENSE`). Team **Camelo** — point of contact on the submission i
 
 ## Demo
 
-**Manipulation.** The reference rollout on the rig: the right arm moves to the demonstration's grasp pose and closes, driven by the remote ACT policy over the tunnel (seconds 1–8 of the session video; [mp4](media/manipulation.mp4)).
-
-![ACT rollout on the Munich rig](media/manipulation.gif)
-
 **Perception-based approach.** Left: the head camera while the base drives, with the segmented tabletop and the located table box drawn over it. Right: the bird's-eye map with the table, the fused base pose, the planned path and the goal (option A; [mp4](media/approach.mp4)).
 
 ![Perception-based base approach](media/approach.gif)
+
+**Manipulation.** The reference rollout on the rig: the right arm moves to the demonstration's grasp pose and closes, driven by the remote ACT policy over the tunnel (seconds 1–8 of the session video; [mp4](media/manipulation.mp4)).
+
+![ACT rollout on the Munich rig](media/manipulation.gif)
