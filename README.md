@@ -11,7 +11,7 @@ approach** can drive the base to the table first, or the base is parked by hand.
 setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). Read [Status](#status) before running anything on hardware.
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `c96dcbf`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `cac3717`).
 
 ## How it runs
 
@@ -245,6 +245,6 @@ Apache-2.0 (`LICENSE`). Team **Camelo** — point of contact on the submission i
 
 ![ACT rollout on the Munich rig](media/manipulation.gif)
 
-**Perception-based approach.** Head-camera view while the base drives toward the table: the tabletop segmentation and the projected table model that the pose filter locks onto (option A; [mp4](media/approach.mp4)).
+**Perception-based approach.** Left: the head camera while the base drives, with the segmented tabletop and the located table box drawn over it. Right: the bird's-eye map with the table, the fused base pose, the planned path and the goal (option A; [mp4](media/approach.mp4)).
 
 ![Perception-based base approach](media/approach.gif)
