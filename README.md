@@ -11,7 +11,7 @@ approach** can drive the base to the table first, or the base is parked by hand.
 setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). Read [Status](#status) before running anything on hardware.
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `db22206`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `d86ee2a`).
 
 ## How it runs
 
@@ -235,10 +235,6 @@ training code, tests and internal protocol docs stay in the private repo.
 | `outputs/rig/munich_2026-09-01/slot_grasp_poses.json` | Per-slot mean demo grasp pose, used by `--gripper-latch-near slot:xNNN:radius` |
 | `outputs/rig/munich_2026-09-01/runs.csv` / `rollouts.csv` | Session log / scored-rollout ledger |
 
-## Licence / citation
-
-Apache-2.0 (`LICENSE`). Team **Camelo** — point of contact on the submission issue.
-
 ## Demo
 
 **Perception-based approach.** Left: the head camera while the base drives, with the segmented tabletop and the located table box drawn over it. Right: the bird's-eye map with the table, the fused base pose, the planned path and the goal (option A; [mp4](media/approach.mp4)).
@@ -248,3 +244,7 @@ Apache-2.0 (`LICENSE`). Team **Camelo** — point of contact on the submission i
 **Manipulation.** The reference rollout on the rig: the right arm moves to the demonstration's grasp pose and closes, driven by the remote ACT policy over the tunnel (seconds 1–8 of the session video; [mp4](media/manipulation.mp4)).
 
 ![ACT rollout on the Munich rig](media/manipulation.gif)
+
+## Licence / citation
+
+Apache-2.0 (`LICENSE`). Team **Camelo** — point of contact on the submission issue.
