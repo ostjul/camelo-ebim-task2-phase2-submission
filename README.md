@@ -12,7 +12,7 @@ setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). **Read [Status](#status) before
 running anything on hardware: no scored grasp has succeeded on this rig yet.**
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `7fc268d`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `5b4348e`).
 
 ## How it runs
 
@@ -82,7 +82,7 @@ station pixi shell (everything camelo), **K** = station camera launcher,
 ## Quick run
 
 The blocks that make the remote policy move the arm. Everything between
-them (bring-up, scene, checks, scoring, wind-down) is in the
+them (scene placement, checks, scoring, wind-down) is in the
 [cheat sheet](docs/CHEATSHEET.md); do not skip it on hardware.
 
 **G — start the ACT policy server.**
@@ -117,6 +117,31 @@ export FASTRTPS_DEFAULT_PROFILES_FILE=$PWD/outputs/rig/fastdds_camelo.xml
 python -c "import sys, os; print(sys.executable); print('PROFILE=', os.environ.get('FASTRTPS_DEFAULT_PROFILES_FILE'), 'DOMAIN=', os.environ.get('ROS_DOMAIN_ID'), 'RMW=', os.environ.get('RMW_IMPLEMENTATION'))"
 ```
 Must print the pixi python, camelo's own profile, `DOMAIN= 0`, `RMW= rmw_fastrtps_cpp`; the site's own DDS profile silently drops the wrists to 10–15 Hz.
+
+**A — bring up the robot: clock, arm/gripper stack, the four numbers (E-stop in hand).**
+```bash
+cd ~/teleoperation/station && ./configs/sync_robot_clock.sh && ./configs/sync_robot_clock.sh --check
+```
+```bash
+ssh companion
+TMR_WS=~/ros2_ws setsid nohup bash ~/start_upper.bash --restart > ~/start_upper.log 2>&1 < /dev/null &  tail -f ~/start_upper.log
+```
+```bash
+ps -eo pid,etime,args | awk '/ros2_control_n[o]de/' | wc -l; grep -c -iE 'FATAL|reflex|communication_constraints|died' ~/start_upper.log; ps -eo pid,etime,args | awk '/robotiq_gripper_cli[e]nt/' | wc -l; ps -eo pid,args | awk '/start_upp[e]r/' | wc -l    # want 4, 0, 2, 1
+```
+The companion clock must be within 0.05 s of the station; after ~40 s the four numbers must read `4 0 2 1` (controllers, fault lines, gripper clients, launcher). For option A below also start the base stack with `start_base.bash`. Site copies, if a machine lacks them: [`site/station/configs/sync_robot_clock.sh`](site/station/configs/sync_robot_clock.sh), [`site/companion/start_upper.bash`](site/companion/start_upper.bash), [`site/companion/start_base.bash`](site/companion/start_base.bash), [`site/companion/home/fastdds_udp_only.xml`](site/companion/home/fastdds_udp_only.xml).
+
+**K — cameras, then verify the wrists are 640×480 ([cheat sheet](docs/CHEATSHEET.md#phase-0-bring-up-ack)).**
+```bash
+bash ~/teleoperation/station/start_cameras.bash
+```
+Site copies: [`site/station/start_cameras.bash`](site/station/start_cameras.bash) with [`site/station/configs/`](site/station/configs/) (the wrist profile `d405_color_640x480.yml`).
+
+**A — home both arms to the corpus start pose.**
+```bash
+python3 ~/home_arms.py --file ~/t5_ep163_home_pose.yaml
+```
+Wait for `left: at home.` and `right: at home.`. Site copies: [`site/companion/home_arms.py`](site/companion/home_arms.py), [`site/companion/home/t5_ep163_home_pose.yaml`](site/companion/home/t5_ep163_home_pose.yaml). Then place the scene and check spine height and camera contract ([cheat sheet](docs/CHEATSHEET.md#arms-and-scene-apm)).
 
 **T — tunnel to the GPU box (leave it open).**
 ```bash
