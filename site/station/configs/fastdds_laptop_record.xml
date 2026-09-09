@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  LAPTOP profile for record_bag.bash: must discover EVERY participant at once.
+
+  WHY BOTH TRANSPORTS ARE NEEDED
+
+  The wrist cameras run with useBuiltinTransports=false and UDPv4 whitelisted to the wired
+  172.16.16.140 - they have NO shared memory. The laptop teleop nodes and the robot stack
+  use default transports, which DO have shared memory, and Fast DDS pairs same-host
+  participants over SHM in preference to UDP.
+
+  So a recorder with only one of the two sees only half the graph, silently:
+    * default transports (SHM + UDP)  -> teleop yes, cameras NO
+    * wired UDP only                  -> cameras yes, teleop NO
+  Both were observed on 2026-08-23. Neither reports an error; the topics are simply absent.
+
+  This profile declares SHM *and* the wired UDP transport, so it matches both groups.
+
+  Deliberately NO initialPeersList. Adding one to the robot profile broke that machine's own
+  local discovery, because unicast initial peers probe only a small range of participant
+  indices and the robot runs well over a dozen. See docs/RUNBOOK.md S9.
+
+  Update the address if this laptop's wired IP changes: ip -4 addr show eth0
+-->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>eth_udp</transport_id>
+        <type>UDPv4</type>
+        <interfaceWhiteList>
+          <address>172.16.16.140</address>
+        </interfaceWhiteList>
+      </transport_descriptor>
+      <transport_descriptor>
+        <transport_id>local_shm</transport_id>
+        <type>SHM</type>
+      </transport_descriptor>
+    </transport_descriptors>
+
+    <participant profile_name="laptop_record" is_default_profile="true">
+      <rtps>
+        <userTransports>
+          <transport_id>local_shm</transport_id>
+          <transport_id>eth_udp</transport_id>
+        </userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>

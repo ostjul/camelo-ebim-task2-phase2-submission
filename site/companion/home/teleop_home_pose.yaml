@@ -1,0 +1,81 @@
+# Teleoperation home pose - the agreed starting position for GELLO teleop.
+#
+# Written by gello_calibration_check.py --save-home. Each side records the ARM
+# pose, the GELLO's RAW encoder values at that pose, and the calibration in force
+# when it was captured.
+#
+# Why the raw values matter: assembly_offsets only mean something relative to a
+# physical GELLO pose. Keeping the raw reading lets a later session reproduce the
+# exact same calibration (--anchor from here), or detect that a GELLO has been
+# knocked or re-assembled, instead of guessing what 'the usual pose' was.
+#
+# Check the current setup against this with:
+#   gello_calibration_check.py --side <side> --check-home
+LEFT:
+  arm_joint_positions:
+  - -1.072185
+  - -0.082723
+  - 1.024787
+  - -2.746873
+  - 1.176839
+  - 1.976895
+  - 0.168207
+  assembly_offsets:
+  - 3.684
+  - 0.777
+  - 3.719
+  - 3.327
+  - 3.659
+  - 4.042
+  - 1.228
+  gello_raw:
+  - 1.614142
+  - 3.835888
+  - 1.601867
+  - 2.932153
+  - 1.693928
+  - 2.876916
+  - 4.201065
+  - 3.320345
+  joint_signs:
+  - -1
+  - 1
+  - 1
+  - -1
+  - 1
+  - 1
+  - -1
+RIGHT:
+  arm_joint_positions:
+  - 0.809728
+  - -0.335639
+  - -0.800341
+  - -2.792884
+  - -1.182067
+  - 1.760234
+  - -0.095578
+  assembly_offsets:
+  - 0.732
+  - 0.277
+  - 2.127
+  - 3.289
+  - 2.513
+  - 4.419
+  - 5.135
+  gello_raw:
+  - -1.600333
+  - 3.754568
+  - 10.751228
+  - 2.939825
+  - 4.472646
+  - 3.038024
+  - 1.897998
+  - 3.292727
+  joint_signs:
+  - 1
+  - -1
+  - 1
+  - -1
+  - 1
+  - 1
+  - 1

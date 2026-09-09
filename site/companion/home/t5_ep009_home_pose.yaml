@@ -1,0 +1,23 @@
+# T5 start pose = task2_munich_s27a15_hires episode 9, frame-0 MEASURED joints
+# (observation.state[0:14] = franka_robot_{left,right}_measured_joint_states, robot frame).
+# Generated 2026-09-02 from outputs/rig/t5/start_pose_s27a15_ep009.json for
+#   python3 ~/home_arms.py --file ~/t5_ep009_home_pose.yaml   (PTP 0.15 rad/s, controllers inactive)
+# Same schema as ~/teleop_home_pose.yaml; only arm_joint_positions is read by home_arms.py.
+LEFT:
+  arm_joint_positions:
+  - 1.845165
+  - 0.572645
+  - -2.240488
+  - -1.628708
+  - 1.614726
+  - 1.076643
+  - -0.313779
+RIGHT:
+  arm_joint_positions:
+  - 1.919310
+  - -0.588053
+  - -1.471318
+  - -1.820399
+  - -1.154854
+  - 1.130252
+  - 1.260193

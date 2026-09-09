@@ -1,0 +1,45 @@
+name: olix_domain_bridge
+
+from_domain: 0
+to_domain: 100
+
+topics:
+  /olive/olixSense/x1/id001/imu:
+    type: sensor_msgs/msg/Imu
+    qos:
+      reliability: reliable
+      durability: volatile
+      history: keep_last
+      depth: 10
+
+  /olive/olixSense/x1/id001/velocity:
+    type: geometry_msgs/msg/TwistStamped
+    qos:
+      reliability: reliable
+      durability: volatile
+      history: keep_last
+      depth: 10
+
+  /olive/olixSense/x1/id001/acceleration:
+    type: geometry_msgs/msg/AccelStamped
+    qos:
+      reliability: reliable
+      durability: volatile
+      history: keep_last
+      depth: 10
+
+  /olive/olixSense/x1/id001/status:
+    type: diagnostic_msgs/msg/DiagnosticStatus
+    qos:
+      reliability: reliable
+      durability: volatile
+      history: keep_last
+      depth: 10
+
+  /olive/olixSense/x1/id001/temperature:
+    type: sensor_msgs/msg/Temperature
+    qos:
+      reliability: reliable
+      durability: volatile
+      history: keep_last
+      depth: 10
