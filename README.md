@@ -11,7 +11,7 @@ approach** can drive the base to the table first, or the base is parked by hand.
 setup exactly as it was run in Munich. The terminal-by-terminal procedure is
 [`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). Read [Status](#status) before running anything on hardware.
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `c55f3f9`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `bec196f`).
 
 ## How it runs
 
@@ -238,3 +238,9 @@ training code, tests and internal protocol docs stay in the private repo.
 ## Licence / citation
 
 Apache-2.0 (`LICENSE`). Team **Camelo** — point of contact on the submission issue.
+
+## Demo
+
+The `a05` line on the rig: approach to the demonstration's grasp pose and the close, right arm, remote ACT policy over the tunnel (cut 1–8 s of the session video; [mp4](media/manipulation.mp4)).
+
+![ACT rollout on the Munich rig](media/manipulation.gif)
