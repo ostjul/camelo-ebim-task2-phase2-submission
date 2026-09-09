@@ -9,10 +9,9 @@ is served from a remote GPU box; an **executor** runs natively on the station
 laptop and drives the arms at 20 Hz; a **perception-based base
 approach** can drive the base to the table first, or the base is parked by hand. This README is the manual for running that
 setup exactly as it was run in Munich. The terminal-by-terminal procedure is
-[`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). **Read [Status](#status) before
-running anything on hardware: no scored grasp has succeeded on this rig yet.**
+[`docs/CHEATSHEET.md`](docs/CHEATSHEET.md). Read [Status](#status) before running anything on hardware.
 
-Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `1513d29`).
+Image: `ghcr.io/ostjul/camelo-ebim-task2-phase2-submission:v0.1.0` · Release `v0.1.0` — 2026-09-09 (build `2124048`).
 
 ## How it runs
 
